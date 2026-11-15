@@ -1,7 +1,5 @@
 # NENA Addressing Tools — QGIS plugin
 
-*(formerly “NENA RCL Tools”; the folder QGIS loads is still `nena_rcl_tools` so existing installs and saved settings keep working)*
-
 Create and maintain **NENA NG9-1-1 street names and road centerline** address
 ranges. Requires QGIS 3.34 or newer, including the 3.40 LTR and QGIS 4.
 No extra Python packages. License: [GPL-2.0-or-later](LICENSE).
