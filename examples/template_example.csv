@@ -1,0 +1,10 @@
+name,type,length,req,description,nena
+L_F_ADD,int,,M,Left from address,FromAddr_L
+L_T_ADD,int,,M,Left to address,ToAddr_L
+R_F_ADD,int,,M,Right from address,FromAddr_R
+R_T_ADD,int,,M,Right to address,ToAddr_R
+PARITY_L,string,1,M,Left parity,Parity_L
+PARITY_R,string,1,M,Right parity,Parity_R
+STREETNAME,string,60,M,Street name,St_Name
+NGUID,string,254,M,Segment NGUID,RCL_NGUID
+LOCAL_NOTE,string,100,O,Local extension field,

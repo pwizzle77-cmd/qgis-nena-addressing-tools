@@ -1,0 +1,39 @@
+[general]
+name=NENA Addressing Tools
+qgisMinimumVersion=3.34
+qgisMaximumVersion=4.99
+description=NG9-1-1 (NENA-STA-006) addressing tools: click-to-address with driveways, master street names with cascading renames, road centerline address ranging, re-ranging on split/merge/new intersections, and validation.
+about=Datasource-independent NG9-1-1 addressing tools (GeoPackage, PostGIS, SQL Server, Oracle, shapefile, ...).
+    Keep one master list of street names that centerlines and address points link to by StreetID; renames cascade,
+    duplicates are blocked by a configurable county-wide or per-community rule.
+    Map your fields to NENA-STA-006 attributes, auto-range left/right FROM/TO addresses (hundred-block,
+    interval, proportional or from address points) with parity handling, automatically redistribute ranges
+    when a centerline is split or merged, and validate for gaps, overlaps, parity, direction, domain and
+    NGUID problems. All edits go through the edit buffer and are undoable. Pure PyQGIS, no extra dependencies.
+version=3.2.8
+author=NENA RCL Tools contributors
+email=noreply@example.com
+changelog=3.2.8 - The panel is organized into Streets, Addresses, Ranges, Check, and Settings. Daily actions stay on the work tabs. Schema, field mapping, sides, defaults, and rules are on Settings. Save at the top stores the panel settings.
+    3.2.7 - On a database layer, WhoEntered and LastUpdatedBy use the login from the QGIS connection. WhoEntered is filled only when it is empty. LastUpdatedBy is written on each new or changed feature. Change tracking stores that same login in ChangedBy.
+    3.2.6 - Split a centerline where the side changes, split existing roads at intersections, and close address-range gaps. Compare centerlines to an MSAG table. Default values for state, county, one-way, parity, and other fields that rarely change fill only empty fields.
+    3.2.5 - ZIP, MSAG, and ESN polygons are chosen on the Fields tab and calculate the left and right side of the centerline. An address copies the side of the road it sits on.
+    3.2.4 - Change tracking records a numbered version of each saved insert, update, and delete, including the old and new values. An update stores the feature as it was saved. New version tables are named with _Versions.
+    3.2.3 - Building the master street list no longer creates a row with a blank street name. Choose a ZIP, MSAG, and ESN polygon layer and field; each side of a road is stamped from the polygon beside that side, and a new address copies those values from the side it is on.
+    3.2.2 - After a road is split, selecting the pieces and re-ranging divides the original address range across them. New address points get a FullName field filled with the full road name. The panel uses the application colors so the text stays readable, and the toolbar stays on its own row at the top with the tools at the right.
+    3.2.1 - The panel opens as a tab beside the catalog, with horizontal and vertical scroll bars so every control can be reached. The toolbar sits on its own full-width row at the top, with the tools at the right.
+    3.2.0 - Optional archive tables for road centerlines, street names, address points, and driveways, and an option to record each saved insert, update, and delete into those tables.
+    3.1.0 - Create a fresh NENA schema in a GeoPackage, File Geodatabase, or database connection (PostgreSQL, SQL Server, Oracle, SAP HANA, SpatiaLite), and import existing roads, street names, addresses, and driveways into it.
+    3.0.0 - Addressing (Phases 2-3): address & driveway map tool (click road, then rooftop) with defined-distance numbering by default, interpolation or frontage optional, per-community overrides, order and collision handling; boundary attribution rules (MSAG/ZIP/ESN/...); selection overlay; partial-rename re-addressing dialog; address checks; shared driveways; undo last address; PostgreSQL integrity SQL; CSV reports; built-in NENA SSAP schema with optional state template.
+    2.0.0 - Renamed to NENA Addressing Tools. Master street names (Phase 1): table in a GeoPackage or any database connection, build from centerlines with variant cleanup, cascade rename with retired aliases, configurable uniqueness (county-wide full name by default), assign/sync, StreetID drop-downs, live sync, name checks.
+    1.2.0 - Auto-split existing centerlines where a newly digitized road creates an intersection (T or crossing) and re-range the sections so numbering continues; option on by default.
+    1.1.0 - Split & Re-range map tool (one undo step); split re-ranging anchored to address points near the split; NENA field templates (GeoPackage/shapefile/GeoJSON/JSON/CSV or project layer); find & select overlapping ranges.
+    1.0.0 - First release: field mapping, auto-ranging (hundred-block, interval, proportional, address points), split/merge re-ranging, validation, NGUID tools.
+tags=nena,ng911,street names,msag,address points,site structure address points,driveways,9-1-1,e911,addressing,road centerline,address ranges,geocoding,routing,validation
+homepage=https://github.com/pwizzle77-cmd/qgis-nena-addressing-tools
+repository=https://github.com/pwizzle77-cmd/qgis-nena-addressing-tools
+tracker=https://github.com/pwizzle77-cmd/qgis-nena-addressing-tools/issues
+category=Vector
+icon=icons/icon.svg
+experimental=False
+deprecated=False
+hasProcessingProvider=no

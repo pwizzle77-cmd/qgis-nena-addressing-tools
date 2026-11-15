@@ -1,0 +1,18 @@
+<!-- Optional. The plugin loads its SVG icons straight from icons/ so no
+     compilation is needed. Kept for teams that prefer compiled resources:
+     pyrcc5 -o resources.py resources.qrc  (Qt5 only; Qt6 has no pyrcc). -->
+<RCC>
+  <qresource prefix="/plugins/nena_rcl_tools">
+    <file>icons/icon.svg</file>
+    <file>icons/range.svg</file>
+    <file>icons/redistribute.svg</file>
+    <file>icons/split.svg</file>
+    <file>icons/validate.svg</file>
+    <file>icons/mapping.svg</file>
+    <file>icons/split_tool.svg</file>
+    <file>icons/overlaps.svg</file>
+    <file>icons/streets.svg</file>
+    <file>icons/address.svg</file>
+    <file>icons/undo_address.svg</file>
+  </qresource>
+</RCC>

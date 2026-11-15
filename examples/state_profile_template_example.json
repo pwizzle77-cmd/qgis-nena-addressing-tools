@@ -1,0 +1,170 @@
+{
+  "name": "Example state NG9-1-1 RCL profile",
+  "fields": [
+    {
+      "name": "DiscrpAgID",
+      "type": "string",
+      "length": 75,
+      "req": "M"
+    },
+    {
+      "name": "DateUpdate",
+      "type": "datetime",
+      "req": "M"
+    },
+    {
+      "name": "RCL_NGUID",
+      "type": "string",
+      "length": 254,
+      "req": "M"
+    },
+    {
+      "name": "FromAddr_L",
+      "type": "int",
+      "req": "M"
+    },
+    {
+      "name": "ToAddr_L",
+      "type": "int",
+      "req": "M"
+    },
+    {
+      "name": "FromAddr_R",
+      "type": "int",
+      "req": "M"
+    },
+    {
+      "name": "ToAddr_R",
+      "type": "int",
+      "req": "M"
+    },
+    {
+      "name": "Parity_L",
+      "type": "string",
+      "length": 1,
+      "req": "M"
+    },
+    {
+      "name": "Parity_R",
+      "type": "string",
+      "length": 1,
+      "req": "M"
+    },
+    {
+      "name": "St_PreDir",
+      "type": "string",
+      "length": 9,
+      "req": "C"
+    },
+    {
+      "name": "St_Name",
+      "type": "string",
+      "length": 60,
+      "req": "M",
+      "description": "State profile: required on every segment"
+    },
+    {
+      "name": "St_PosTyp",
+      "type": "string",
+      "length": 35,
+      "req": "C"
+    },
+    {
+      "name": "St_PosDir",
+      "type": "string",
+      "length": 9,
+      "req": "C"
+    },
+    {
+      "name": "ESN_L",
+      "type": "string",
+      "length": 5,
+      "req": "M"
+    },
+    {
+      "name": "ESN_R",
+      "type": "string",
+      "length": 5,
+      "req": "M"
+    },
+    {
+      "name": "Country_L",
+      "type": "string",
+      "length": 2,
+      "req": "M"
+    },
+    {
+      "name": "Country_R",
+      "type": "string",
+      "length": 2,
+      "req": "M"
+    },
+    {
+      "name": "State_L",
+      "type": "string",
+      "length": 2,
+      "req": "M"
+    },
+    {
+      "name": "State_R",
+      "type": "string",
+      "length": 2,
+      "req": "M"
+    },
+    {
+      "name": "County_L",
+      "type": "string",
+      "length": 100,
+      "req": "M"
+    },
+    {
+      "name": "County_R",
+      "type": "string",
+      "length": 100,
+      "req": "M"
+    },
+    {
+      "name": "IncMuni_L",
+      "type": "string",
+      "length": 100,
+      "req": "M"
+    },
+    {
+      "name": "IncMuni_R",
+      "type": "string",
+      "length": 100,
+      "req": "M"
+    },
+    {
+      "name": "OneWay",
+      "type": "string",
+      "length": 2,
+      "req": "C"
+    },
+    {
+      "name": "SpeedLimit",
+      "type": "int",
+      "req": "C"
+    },
+    {
+      "name": "RoadClass",
+      "type": "string",
+      "length": 15,
+      "req": "C"
+    },
+    {
+      "name": "STATE_SEG_ID",
+      "type": "string",
+      "length": 20,
+      "req": "M",
+      "description": "State extension: statewide segment id (not a NENA field)"
+    },
+    {
+      "name": "SOURCE_AGENCY",
+      "type": "string",
+      "length": 50,
+      "req": "O",
+      "description": "State extension"
+    }
+  ]
+}

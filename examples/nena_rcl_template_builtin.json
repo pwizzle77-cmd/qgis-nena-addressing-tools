@@ -1,0 +1,405 @@
+{
+  "name": "NENA-STA-006.2 Road Centerline (built-in)",
+  "fields": [
+    {
+      "name": "DiscrpAgID",
+      "type": "string",
+      "length": 100,
+      "req": "M",
+      "description": "Discrepancy Agency ID (domain of the agency that resolves discrepancies)",
+      "nena": "DiscrpAgID"
+    },
+    {
+      "name": "DateUpdate",
+      "type": "datetime",
+      "length": 0,
+      "req": "M",
+      "description": "Date the record was last updated",
+      "nena": "DateUpdate"
+    },
+    {
+      "name": "WhoEntered",
+      "type": "string",
+      "length": 100,
+      "req": "O",
+      "description": "User who first saved the record. A database layer uses the connection login when this is empty.",
+      "nena": "WhoEntered"
+    },
+    {
+      "name": "LastUpdatedBy",
+      "type": "string",
+      "length": 100,
+      "req": "O",
+      "description": "User who last saved the record. A database layer uses the connection login.",
+      "nena": "LastUpdatedBy"
+    },
+    {
+      "name": "Effective",
+      "type": "datetime",
+      "length": 0,
+      "req": "O",
+      "description": "Date the record becomes effective",
+      "nena": "Effective"
+    },
+    {
+      "name": "Expire",
+      "type": "datetime",
+      "length": 0,
+      "req": "O",
+      "description": "Date the record expires",
+      "nena": "Expire"
+    },
+    {
+      "name": "RCL_NGUID",
+      "type": "string",
+      "length": 254,
+      "req": "M",
+      "description": "Road Centerline NENA Globally Unique ID",
+      "nena": "RCL_NGUID"
+    },
+    {
+      "name": "AdNumPre_L",
+      "type": "string",
+      "length": 15,
+      "req": "O",
+      "description": "Left address number prefix",
+      "nena": "AdNumPre_L"
+    },
+    {
+      "name": "AdNumPre_R",
+      "type": "string",
+      "length": 15,
+      "req": "O",
+      "description": "Right address number prefix",
+      "nena": "AdNumPre_R"
+    },
+    {
+      "name": "FromAddr_L",
+      "type": "int",
+      "length": 0,
+      "req": "M",
+      "description": "Left FROM address (at the start vertex)",
+      "nena": "FromAddr_L"
+    },
+    {
+      "name": "ToAddr_L",
+      "type": "int",
+      "length": 0,
+      "req": "M",
+      "description": "Left TO address (at the end vertex)",
+      "nena": "ToAddr_L"
+    },
+    {
+      "name": "FromAddr_R",
+      "type": "int",
+      "length": 0,
+      "req": "M",
+      "description": "Right FROM address (at the start vertex)",
+      "nena": "FromAddr_R"
+    },
+    {
+      "name": "ToAddr_R",
+      "type": "int",
+      "length": 0,
+      "req": "M",
+      "description": "Right TO address (at the end vertex)",
+      "nena": "ToAddr_R"
+    },
+    {
+      "name": "Parity_L",
+      "type": "string",
+      "length": 1,
+      "req": "M",
+      "description": "Left parity: O(dd) E(ven) B(oth) Z(ero)",
+      "nena": "Parity_L"
+    },
+    {
+      "name": "Parity_R",
+      "type": "string",
+      "length": 1,
+      "req": "M",
+      "description": "Right parity: O(dd) E(ven) B(oth) Z(ero)",
+      "nena": "Parity_R"
+    },
+    {
+      "name": "St_PreMod",
+      "type": "string",
+      "length": 15,
+      "req": "O",
+      "description": "Street name pre modifier",
+      "nena": "St_PreMod"
+    },
+    {
+      "name": "St_PreDir",
+      "type": "string",
+      "length": 9,
+      "req": "C",
+      "description": "Street name pre directional (spelled out)",
+      "nena": "St_PreDir"
+    },
+    {
+      "name": "St_PreTyp",
+      "type": "string",
+      "length": 35,
+      "req": "C",
+      "description": "Street name pre type",
+      "nena": "St_PreTyp"
+    },
+    {
+      "name": "St_PreSep",
+      "type": "string",
+      "length": 20,
+      "req": "C",
+      "description": "Street name pre type separator",
+      "nena": "St_PreSep"
+    },
+    {
+      "name": "St_Name",
+      "type": "string",
+      "length": 60,
+      "req": "C",
+      "description": "Street name",
+      "nena": "St_Name"
+    },
+    {
+      "name": "St_PosTyp",
+      "type": "string",
+      "length": 35,
+      "req": "C",
+      "description": "Street name post type (suffix)",
+      "nena": "St_PosTyp"
+    },
+    {
+      "name": "St_PosDir",
+      "type": "string",
+      "length": 9,
+      "req": "C",
+      "description": "Street name post directional (spelled out)",
+      "nena": "St_PosDir"
+    },
+    {
+      "name": "St_PosMod",
+      "type": "string",
+      "length": 25,
+      "req": "O",
+      "description": "Street name post modifier",
+      "nena": "St_PosMod"
+    },
+    {
+      "name": "ESN_L",
+      "type": "string",
+      "length": 5,
+      "req": "C",
+      "description": "Left Emergency Service Number",
+      "nena": "ESN_L"
+    },
+    {
+      "name": "ESN_R",
+      "type": "string",
+      "length": 5,
+      "req": "C",
+      "description": "Right Emergency Service Number",
+      "nena": "ESN_R"
+    },
+    {
+      "name": "MSAGComm_L",
+      "type": "string",
+      "length": 30,
+      "req": "C",
+      "description": "Left MSAG community name",
+      "nena": "MSAGComm_L"
+    },
+    {
+      "name": "MSAGComm_R",
+      "type": "string",
+      "length": 30,
+      "req": "C",
+      "description": "Right MSAG community name",
+      "nena": "MSAGComm_R"
+    },
+    {
+      "name": "Country_L",
+      "type": "string",
+      "length": 2,
+      "req": "M",
+      "description": "Left country (ISO 3166-1 alpha-2, e.g. US)",
+      "nena": "Country_L"
+    },
+    {
+      "name": "Country_R",
+      "type": "string",
+      "length": 2,
+      "req": "M",
+      "description": "Right country (ISO 3166-1 alpha-2, e.g. US)",
+      "nena": "Country_R"
+    },
+    {
+      "name": "State_L",
+      "type": "string",
+      "length": 2,
+      "req": "M",
+      "description": "Left state (2-letter USPS)",
+      "nena": "State_L"
+    },
+    {
+      "name": "State_R",
+      "type": "string",
+      "length": 2,
+      "req": "M",
+      "description": "Right state (2-letter USPS)",
+      "nena": "State_R"
+    },
+    {
+      "name": "County_L",
+      "type": "string",
+      "length": 100,
+      "req": "M",
+      "description": "Left county (full name)",
+      "nena": "County_L"
+    },
+    {
+      "name": "County_R",
+      "type": "string",
+      "length": 100,
+      "req": "M",
+      "description": "Right county (full name)",
+      "nena": "County_R"
+    },
+    {
+      "name": "AddCode_L",
+      "type": "string",
+      "length": 6,
+      "req": "C",
+      "description": "Left additional code",
+      "nena": "AddCode_L"
+    },
+    {
+      "name": "AddCode_R",
+      "type": "string",
+      "length": 6,
+      "req": "C",
+      "description": "Right additional code",
+      "nena": "AddCode_R"
+    },
+    {
+      "name": "IncMuni_L",
+      "type": "string",
+      "length": 100,
+      "req": "M",
+      "description": "Left incorporated municipality",
+      "nena": "IncMuni_L"
+    },
+    {
+      "name": "IncMuni_R",
+      "type": "string",
+      "length": 100,
+      "req": "M",
+      "description": "Right incorporated municipality",
+      "nena": "IncMuni_R"
+    },
+    {
+      "name": "UnincCom_L",
+      "type": "string",
+      "length": 100,
+      "req": "O",
+      "description": "Left unincorporated community",
+      "nena": "UnincCom_L"
+    },
+    {
+      "name": "UnincCom_R",
+      "type": "string",
+      "length": 100,
+      "req": "O",
+      "description": "Right unincorporated community",
+      "nena": "UnincCom_R"
+    },
+    {
+      "name": "NbrhdCom_L",
+      "type": "string",
+      "length": 100,
+      "req": "O",
+      "description": "Left neighborhood community",
+      "nena": "NbrhdCom_L"
+    },
+    {
+      "name": "NbrhdCom_R",
+      "type": "string",
+      "length": 100,
+      "req": "O",
+      "description": "Right neighborhood community",
+      "nena": "NbrhdCom_R"
+    },
+    {
+      "name": "PostCode_L",
+      "type": "string",
+      "length": 7,
+      "req": "C",
+      "description": "Left postal (ZIP) code",
+      "nena": "PostCode_L"
+    },
+    {
+      "name": "PostCode_R",
+      "type": "string",
+      "length": 7,
+      "req": "C",
+      "description": "Right postal (ZIP) code",
+      "nena": "PostCode_R"
+    },
+    {
+      "name": "PostComm_L",
+      "type": "string",
+      "length": 40,
+      "req": "C",
+      "description": "Left postal community name",
+      "nena": "PostComm_L"
+    },
+    {
+      "name": "PostComm_R",
+      "type": "string",
+      "length": 40,
+      "req": "C",
+      "description": "Right postal community name",
+      "nena": "PostComm_R"
+    },
+    {
+      "name": "RoadClass",
+      "type": "string",
+      "length": 15,
+      "req": "C",
+      "description": "Road class (e.g. Primary, Secondary, Local)",
+      "nena": "RoadClass"
+    },
+    {
+      "name": "OneWay",
+      "type": "string",
+      "length": 2,
+      "req": "C",
+      "description": "One-way: B (both), FT (from-to), TF (to-from)",
+      "nena": "OneWay"
+    },
+    {
+      "name": "SpeedLimit",
+      "type": "int",
+      "length": 0,
+      "req": "C",
+      "description": "Posted speed limit (MPH)",
+      "nena": "SpeedLimit"
+    },
+    {
+      "name": "Valid_L",
+      "type": "string",
+      "length": 1,
+      "req": "O",
+      "description": "Left side valid for routing/geocoding (Y/N)",
+      "nena": "Valid_L"
+    },
+    {
+      "name": "Valid_R",
+      "type": "string",
+      "length": 1,
+      "req": "O",
+      "description": "Right side valid for routing/geocoding (Y/N)",
+      "nena": "Valid_R"
+    }
+  ]
+}
