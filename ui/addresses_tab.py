@@ -39,6 +39,8 @@ UNITS = [("feet", "feet"), ("US survey feet", "us_survey_feet"), ("meters", "met
 
 class AddressesTab(QWidget):
     toolRequested = pyqtSignal()
+    drivewayToolRequested = pyqtSignal()
+    unitsToolRequested = pyqtSignal()
     configSaved = pyqtSignal()
 
     def __init__(self, dock, parent=None):
@@ -53,9 +55,20 @@ class AddressesTab(QWidget):
         outer.addWidget(scroll)
 
         row = QHBoxLayout()
-        for text, slot, tip in (("Address tool", lambda: self.toolRequested.emit(),
-                                 "Click the road at the driveway entrance, then the rooftop"),
-                                ("Undo last", self.undo, "Remove the last address and its driveway"),
+        for text, slot, tip in (
+                ("Place address", lambda: self.toolRequested.emit(),
+                 "Click the road or a driveway for access, then the rooftop. Hold Shift to draw a straight driveway."),
+                ("Draw driveway", lambda: self.drivewayToolRequested.emit(),
+                 "Click the access point, then each bend. Right-click or double-click to finish."),
+                ("Place units", lambda: self.unitsToolRequested.emit(),
+                 "One access click, then each rooftop. Right-click or Esc ends that access.")):
+            b = QPushButton(text)
+            b.setToolTip(tip)
+            b.clicked.connect(lambda *_, s=slot: s())
+            row.addWidget(b)
+        lay.addLayout(row)
+        row = QHBoxLayout()
+        for text, slot, tip in (("Undo last", self.undo, "Remove the last address and its driveway, if one was drawn"),
                                 ("Check", self.check, "Range, side, order, duplicates, boundaries")):
             b = QPushButton(text)
             b.setToolTip(tip)
@@ -161,7 +174,9 @@ class AddressesTab(QWidget):
         f = QFormLayout(g)
         self.cb_place = combo([(p, p) for p in PLACEMENT_VALUES])
         f.addRow("Placement", self.cb_place)
-        self.chk_dw = QCheckBox("Create a driveway with each address")
+        self.chk_dw = QCheckBox("Straight driveway with Place address")
+        self.chk_dw.setToolTip("Off for a new project. Hold Shift on the rooftop click, or tick the box in the "
+                               "confirm dialog, to draw one line from the access point to that rooftop.")
         self.chk_overlay = QCheckBox("Show where selected addresses were addressed on the road")
         f.addRow(self.chk_dw)
         f.addRow(self.chk_overlay)

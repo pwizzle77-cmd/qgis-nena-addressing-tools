@@ -14,7 +14,7 @@ from .widgets import hint
 class AddressDialog(QDialog):
     """Review the calculated address before it is written."""
 
-    def __init__(self, parent, plan, placement="Structure", driveway_available=True, create_driveway=True):
+    def __init__(self, parent, plan, placement="Structure", driveway_available=True, create_driveway=False):
         super().__init__(parent)
         self.setWindowTitle("New address")
         self.plan = plan
@@ -50,11 +50,11 @@ class AddressDialog(QDialog):
         self.cb_place.addItems(PLACEMENT_VALUES)
         self.cb_place.setCurrentText(placement)
         form.addRow("Placement", self.cb_place)
-        self.chk_dw = QCheckBox("Create driveway")
+        self.chk_dw = QCheckBox("Draw a straight driveway")
         self.chk_dw.setChecked(create_driveway and driveway_available)
         self.chk_dw.setEnabled(driveway_available)
-        if not driveway_available:
-            self.chk_dw.setToolTip("Choose a driveway layer in the Addresses tab")
+        self.chk_dw.setToolTip("Off unless you held Shift or turned this on. Draw driveway is the tool for a real path."
+                               if driveway_available else "Choose a driveway layer on the Addresses tab.")
         form.addRow(self.chk_dw)
         lay.addLayout(form)
         if plan.community:

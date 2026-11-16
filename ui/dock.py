@@ -52,6 +52,8 @@ TITLE = "NENA Addressing Tools"
 class NenaDock(QDockWidget):
     splitToolRequested = pyqtSignal()
     addressToolRequested = pyqtSignal()
+    drivewayToolRequested = pyqtSignal()
+    unitsToolRequested = pyqtSignal()
     projectConfigSaved = pyqtSignal()
 
     def __init__(self, iface, watchers, parent=None, street_watchers=None):
@@ -117,7 +119,7 @@ class NenaDock(QDockWidget):
                 (self.streets, "streets.svg", "Streets",
                  "Master names, and the roads and addresses that use them"),
                 (self.addresses, "address.svg", "Addresses",
-                 "Place an address, and choose the address and driveway layers"),
+                 "Place an address, draw a driveway, or place units that share one access"),
                 (self.ranging, "range.svg", "Ranges",
                  "Give roads address ranges and split them"),
                 (self.validation, "validate.svg", "Check",
@@ -128,6 +130,8 @@ class NenaDock(QDockWidget):
             index = self.tabs.addTab(widget, icon(icon_name), title)
             self.tabs.setTabToolTip(index, tip)
         self.addresses.toolRequested.connect(lambda *_: self.addressToolRequested.emit())
+        self.addresses.drivewayToolRequested.connect(lambda *_: self.drivewayToolRequested.emit())
+        self.addresses.unitsToolRequested.connect(lambda *_: self.unitsToolRequested.emit())
         self.addresses.configSaved.connect(lambda *_: self.projectConfigSaved.emit())
         lay.addWidget(self.tabs, 1)
 

@@ -65,7 +65,7 @@ class AddressSettings:
     override_field: str = "MSAGComm"          # community key the overrides are keyed by
     # creation
     placement: str = "Structure"
-    create_driveway: bool = True
+    create_driveway: bool = False            # a straight driveway is optional; Draw driveway digitizes a real path
     attribute_at: str = "rooftop"             # kept so an older project still loads; addresses copy the road side
     attribution_rules: List[Dict] = field(default_factory=list)   # {layer_id, layer_source, source_field, target}
     overlay: bool = True
@@ -104,12 +104,22 @@ class ArchiveSettings:
 
 
 @dataclass
+class StreetTypeSettings:
+    """Street types for the name form. ``custom`` False means the built-in NENA/USPS list."""
+
+    custom: bool = False
+    types: List[str] = field(default_factory=list)
+    abbreviations: Dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
 class ProjectConfig:
     version: int = CONFIG_VERSION
     streets: StreetSettings = field(default_factory=StreetSettings)
     addresses: AddressSettings = field(default_factory=AddressSettings)
     msag: MsagSettings = field(default_factory=MsagSettings)
     archive: ArchiveSettings = field(default_factory=ArchiveSettings)
+    street_types: StreetTypeSettings = field(default_factory=StreetTypeSettings)
 
     def to_json(self, indent=None) -> str:
         return json.dumps(asdict(self), indent=indent)
@@ -121,6 +131,7 @@ class ProjectConfig:
         _load(cfg.addresses, (data or {}).get("addresses") or {}, str_dicts=("driveway_mapping",))
         _load(cfg.msag, (data or {}).get("msag") or {})
         _load(cfg.archive, (data or {}).get("archive") or {})
+        _load_street_types(cfg.street_types, (data or {}).get("street_types"))
         return cfg
 
     @classmethod
@@ -152,6 +163,33 @@ def _load(obj, data: dict, str_dicts=()) -> None:
         except (TypeError, ValueError):
             continue
         setattr(obj, f.name, v)
+
+
+def _load_street_types(obj: StreetTypeSettings, data) -> None:
+    """String lists are kept. The generic loader only keeps dicts inside a list."""
+    if not isinstance(data, dict):
+        return
+    if "custom" in data:
+        obj.custom = bool(data.get("custom"))
+    types = data.get("types") or []
+    if isinstance(types, list):
+        seen = set()
+        kept = []
+        for item in types:
+            text = " ".join(str(item).split())
+            mark = text.upper()
+            if text and mark not in seen:
+                seen.add(mark)
+                kept.append(text)
+        obj.types = kept
+    abbr = data.get("abbreviations") or {}
+    if isinstance(abbr, dict):
+        obj.abbreviations = {}
+        for key, value in abbr.items():
+            k = " ".join(str(key).upper().replace(".", "").split())
+            v = " ".join(str(value).split())
+            if k and v:
+                obj.abbreviations[k] = v
 
 
 # ---------------------------------------------------------------------------

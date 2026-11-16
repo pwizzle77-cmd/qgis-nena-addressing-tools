@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from typing import Dict, Hashable, Iterable, List, Optional, Sequence, Tuple
 
 from ..schema import DIRECTIONAL_ABBREVIATIONS, STREET_NAME_FIELDS
+from .street_types import TYPE_ABBREVIATIONS, canonical_type
 
 NAME_PARTS: Tuple[str, ...] = STREET_NAME_FIELDS   # St_PreMod … St_PosMod, in display order
 TYPE_PARTS = ("St_PreTyp", "St_PosTyp")
@@ -29,21 +30,6 @@ STATUS_PROPOSED = "Proposed"
 STATUS_RETIRED = "Retired"
 STATUSES = (STATUS_ACTIVE, STATUS_PROPOSED, STATUS_RETIRED)
 
-# Common USPS street suffix / NENA street type abbreviations -> spelled-out form.
-TYPE_ABBREVIATIONS = {
-    "ALY": "ALLEY", "AVE": "AVENUE", "AV": "AVENUE", "AVN": "AVENUE", "BLVD": "BOULEVARD", "BR": "BRANCH",
-    "BRG": "BRIDGE", "CIR": "CIRCLE", "CT": "COURT", "CV": "COVE", "CRK": "CREEK", "XING": "CROSSING",
-    "DR": "DRIVE", "EXPY": "EXPRESSWAY", "EXT": "EXTENSION", "FWY": "FREEWAY", "GRV": "GROVE",
-    "HTS": "HEIGHTS", "HL": "HILL", "HWY": "HIGHWAY", "HOLW": "HOLLOW", "JCT": "JUNCTION",
-    "LNDG": "LANDING", "LN": "LANE", "MDW": "MEADOW", "ML": "MILL", "PKWY": "PARKWAY", "PL": "PLACE",
-    "PLZ": "PLAZA", "PT": "POINT", "RDG": "RIDGE", "RD": "ROAD", "RTE": "ROUTE", "SPG": "SPRING",
-    "SQ": "SQUARE", "ST": "STREET", "STR": "STREET", "TER": "TERRACE", "TRCE": "TRACE", "TRL": "TRAIL",
-    "TPKE": "TURNPIKE", "VW": "VIEW", "VLG": "VILLAGE", "VIS": "VISTA", "WY": "WAY",
-    # pre-types
-    "CO RD": "COUNTY ROAD", "CR": "COUNTY ROAD", "CNTY RD": "COUNTY ROAD", "ST HWY": "STATE HIGHWAY",
-    "SH": "STATE HIGHWAY", "US HWY": "US HIGHWAY", "SR": "STATE ROUTE", "ST RTE": "STATE ROUTE",
-    "TWP RD": "TOWNSHIP ROAD", "FM": "FARM TO MARKET ROAD",
-}
 _DIRS = {k: v.upper() for k, v in DIRECTIONAL_ABBREVIATIONS.items()}
 
 
@@ -64,7 +50,7 @@ def full_name(parts) -> str:
     return " ".join(clean(parts.get(p)) for p in NAME_PARTS if clean(parts.get(p)))
 
 
-def canonical_part(part: str, value) -> str:
+def canonical_part(part: str, value, abbreviations=None) -> str:
     v = clean(value).upper().replace(".", "")
     if not v:
         return ""
@@ -72,17 +58,17 @@ def canonical_part(part: str, value) -> str:
     if part in DIR_PARTS:
         return _DIRS.get(v.replace(" ", ""), v)
     if part in TYPE_PARTS:
-        return TYPE_ABBREVIATIONS.get(v, v)
+        return canonical_type(v, abbreviations)
     return v
 
 
-def name_key(parts, strictness: str = STRICT_FULL) -> str:
+def name_key(parts, strictness: str = STRICT_FULL, abbreviations=None) -> str:
     """Canonical comparison key of a road name under a strictness rule."""
     out = []
     for p in NAME_PARTS:
         if strictness == STRICT_IGNORE_TYPE and p in TYPE_PARTS:
             continue
-        c = canonical_part(p, parts.get(p))
+        c = canonical_part(p, parts.get(p), abbreviations)
         if c:
             out.append(c)
     return " ".join(out)
@@ -155,9 +141,9 @@ class Conflict:
 
 
 def find_conflicts(parts, scope_value, records: Iterable[StreetRecord], rule: UniquenessRule,
-                   exclude_ids: Sequence[str] = ()) -> List[Conflict]:
+                   exclude_ids: Sequence[str] = (), abbreviations=None) -> List[Conflict]:
     """Active names that clash with ``parts`` under the rule (aliases of excluded ids are skipped)."""
-    key = name_key(parts, rule.strictness)
+    key = name_key(parts, rule.strictness, abbreviations)
     sk = soundalike_key(parts) if rule.soundalike else None
     scope = rule.scope_of(scope_value)
     skip = set(exclude_ids)
@@ -167,19 +153,20 @@ def find_conflicts(parts, scope_value, records: Iterable[StreetRecord], rule: Un
             continue
         if rule.scope_of(r.scope) != scope:
             continue
-        if name_key(r.parts, rule.strictness) == key and key:
+        if name_key(r.parts, rule.strictness, abbreviations) == key and key:
             out.append(Conflict("duplicate", r, rule.action == "block"))
         elif sk and soundalike_key(r.parts) == sk:
             out.append(Conflict("soundalike", r, False))
     return out
 
 
-def duplicate_groups(records: Iterable[StreetRecord], rule: UniquenessRule) -> List[List[StreetRecord]]:
+def duplicate_groups(records: Iterable[StreetRecord], rule: UniquenessRule,
+                     abbreviations=None) -> List[List[StreetRecord]]:
     """Groups of active master records that break the uniqueness rule."""
     groups = defaultdict(list)
     for r in records:
         if r.active and r.full_name:
-            groups[(rule.scope_of(r.scope), name_key(r.parts, rule.strictness))].append(r)
+            groups[(rule.scope_of(r.scope), name_key(r.parts, rule.strictness, abbreviations))].append(r)
     return [g for g in groups.values() if len(g) > 1]
 
 
@@ -208,7 +195,7 @@ def _spelling_score(spelling: Tuple[str, ...], count: int):
     return (count, mixed_case, len(text))     # most used, then proper case, then the longer (spelled out)
 
 
-def group_variants(named: Iterable[Tuple[Dict[str, str], str]]) -> List[VariantGroup]:
+def group_variants(named: Iterable[Tuple[Dict[str, str], str]], abbreviations=None) -> List[VariantGroup]:
     """
     :param named: (parts, scope) for each feature.
     :returns: one group per canonical road name (and scope); ``chosen`` = the
@@ -217,7 +204,7 @@ def group_variants(named: Iterable[Tuple[Dict[str, str], str]]) -> List[VariantG
     acc: Dict[Tuple[str, str], Counter] = defaultdict(Counter)
     for parts, scope in named:
         p = parts_from(parts)
-        key = name_key(p, STRICT_FULL)
+        key = name_key(p, STRICT_FULL, abbreviations)
         if not key:
             continue
         acc[(scope or "", key)][tuple(p[n] for n in NAME_PARTS)] += 1

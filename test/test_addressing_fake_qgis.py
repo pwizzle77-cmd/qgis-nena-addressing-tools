@@ -111,7 +111,7 @@ def test_plan_distance_method_side_and_attribution(world):
 def test_commit_creates_address_and_driveway_then_undo(world):
     ctx, addr, dw = world["ctx"], world["addr"], world["dw"]
     plan = E.plan_address(ctx, P(50, 0), P(55, 30), vertices=[P(52, 15)])
-    ids = E.commit_address(ctx, plan, plan.result.number, unit="")
+    ids = E.commit_address(ctx, plan, plan.result.number, unit="", create_driveway=True)
     a = ids["address"]
     assert attr(addr, a, "Add_Number") == plan.result.number and attr(addr, a, "St_Name") == "Main"
     assert attr(addr, a, "FullName") == "Main St"
@@ -123,6 +123,24 @@ def test_commit_creates_address_and_driveway_then_undo(world):
     assert [(p.x(), p.y()) for p in line] == [(50, 0), (52, 15), (55, 30)]
     assert attr(dw, ids["driveway"], "Site_NGUID") == attr(addr, a, "Site_NGUID")
     assert E.undo_last_address() == 2 and not addr._feats and not dw._feats
+
+
+def test_driveway_is_off_unless_asked_and_a_drawn_driveway_is_separate(world):
+    ctx, dw = world["ctx"], world["dw"]
+    assert ctx.pcfg.addresses.create_driveway is False
+    plan = E.plan_address(ctx, P(10, 0), P(10, 20))
+    ids = E.commit_address(ctx, plan, plan.result.number)
+    assert "driveway" not in ids
+    before = len(E.UNDO_STACK)
+    with pytest.raises(ConfigError):
+        E.commit_driveway(ctx, P(40, 0), [])
+    fid = E.commit_driveway(ctx, P(40, 0), [P(48, 25)], segment_fid=1)
+    assert len(E.UNDO_STACK) == before
+    assert attr(dw, fid, "StreetID") == "S1"
+    assert attr(dw, fid, "RCL_NGUID") == "R1"
+    assert not attr(dw, fid, "Site_NGUID")
+    line = dw._feats[fid].geometry().asPolyline()
+    assert [(p.x(), p.y()) for p in line] == [(40, 0), (48, 25)]
 
 
 def test_neighbours_keep_order_and_collisions(world):
@@ -291,7 +309,7 @@ def test_partial_rename_readdress(world):
 def test_shared_driveway(world):
     ctx = world["ctx"]
     plan = E.plan_address(ctx, P(50, 0), P(50, 40))
-    E.commit_address(ctx, plan, 151)
+    E.commit_address(ctx, plan, 151, create_driveway=True)
     hit = E.shared_driveway_at(ctx, P(50.2, 20), 1.0)
     assert hit is not None and (hit[1].x(), hit[1].y()) == (50.0, 0.0)
 

@@ -10,15 +10,17 @@ from qgis.PyQt.QtWidgets import (QAbstractItemView, QCheckBox, QFileDialog, QFor
 
 from ..compat import table_layer_filter
 from ..core.layer_access import ConfigError
-from ..core.project_config import layer_for, load_project_config, remember, save_project_config
+from ..core.project_config import (StreetTypeSettings, layer_for, load_project_config, remember,
+                                   save_project_config)
 from ..core.streets import names as N
+from ..core.streets.street_types import merged_abbreviations, type_list
 from ..core.streets import repository as REPO
 from ..core.addressing import engine as E
 from ..core.streets import dbsql
 from ..core.streets.relations import setup_relations
 from ..core.streets.service import StreetService, add_link_field
 from .address_dialogs import ReaddressDialog, SqlDialog
-from .street_dialogs import BuildDialog, IssuesDialog, NameDialog
+from .street_dialogs import BuildDialog, IssuesDialog, NameDialog, StreetTypesDialog
 from .widgets import BoundedTable, FittingScroll, combo, hint, set_combo_data
 
 SCOPE_FIELDS = [("MSAG community (MSAGComm_L)", "MSAGComm_L"), ("Incorporated municipality (IncMuni_L)", "IncMuni_L"),
@@ -97,7 +99,12 @@ class StreetsTab(QWidget):
         f.addRow("Compare", self.cb_strict)
         f.addRow(self.chk_sound)
         f.addRow("Duplicates", self.cb_action)
+        b = QPushButton("Street types…")
+        b.setToolTip("NENA and USPS street types for the name form. Add local types and abbreviations here.")
+        b.clicked.connect(self.edit_types)
+        f.addRow(b)
         self.uniqueness_group = g
+        self.street_types = StreetTypeSettings()
 
         g = QGroupBox("When names change")
         v = QVBoxLayout(g)
@@ -183,6 +190,9 @@ class StreetsTab(QWidget):
         self.chk_cascade.setChecked(s.cascade_direct_edits)
         self.chk_copy.setChecked(s.copy_on_assign)
         self.chk_stamp.setChecked(s.stamp_date_update)
+        st = self.pcfg.street_types
+        self.street_types = StreetTypeSettings(custom=st.custom, types=list(st.types),
+                                               abbreviations=dict(st.abbreviations))
         self.refresh_list()
 
     def store(self):
@@ -201,6 +211,9 @@ class StreetsTab(QWidget):
         s.cascade_direct_edits = self.chk_cascade.isChecked()
         s.copy_on_assign = self.chk_copy.isChecked()
         s.stamp_date_update = self.chk_stamp.isChecked()
+        kept = self.street_types
+        self.pcfg.street_types = StreetTypeSettings(custom=kept.custom, types=list(kept.types),
+                                                    abbreviations=dict(kept.abbreviations))
         save_project_config(self.pcfg)
         if getattr(self.dock, "street_watchers", None) is not None:
             self.dock.street_watchers.refresh()
@@ -217,6 +230,15 @@ class StreetsTab(QWidget):
         if self.dock.layer is None:
             raise ConfigError("Choose the centerline layer at the top of the panel first.")
         return StreetService(self.pcfg, centerline_layer=self.dock.layer, centerline_cfg=self.dock.collect())
+
+    def edit_types(self):
+        dlg = StreetTypesDialog(self, self.street_types)
+        if dlg.exec():
+            self.street_types = dlg.settings()
+
+    def _name_dialog(self, title, **kwargs):
+        return NameDialog(self, title, street_types=type_list(self.street_types),
+                          abbreviations=merged_abbreviations(self.street_types.abbreviations), **kwargs)
 
     # ------------------------------------------------------------------ table creation
     def create_gpkg(self):
@@ -387,8 +409,8 @@ class StreetsTab(QWidget):
     def add(self):
         def do():
             svc = self.service()
-            dlg = NameDialog(self, "Add street name", scope_enabled=self.pcfg.streets.scope_mode == "field",
-                             check=lambda p, sc: svc.conflicts(p, sc))
+            dlg = self._name_dialog("Add street name", scope_enabled=self.pcfg.streets.scope_mode == "field",
+                                    check=lambda p, sc: svc.conflicts(p, sc))
             if not dlg.exec():
                 return
             rec, warnings = svc.add_street(dlg.parts(), dlg.scope())
@@ -403,12 +425,12 @@ class StreetsTab(QWidget):
             sid = self._selected_sid()
             rec = svc.repo.by_id().get(sid)
             seg, adr = svc.rename_preview(sid)
-            dlg = NameDialog(self, f"Rename '{rec.full_name}'", parts=rec.parts, scope=rec.scope,
-                             scope_enabled=self.pcfg.streets.scope_mode == "field",
-                             check=lambda p, sc: svc.conflicts(p, sc, exclude_ids=[sid]), show_alias=True,
-                             keep_alias=self.pcfg.streets.keep_alias_on_rename,
-                             info=f"The new name will be written to <b>{seg}</b> centerline(s) and "
-                                  f"<b>{adr}</b> address point(s) that use this street.")
+            dlg = self._name_dialog(f"Rename '{rec.full_name}'", parts=rec.parts, scope=rec.scope,
+                                    scope_enabled=self.pcfg.streets.scope_mode == "field",
+                                    check=lambda p, sc: svc.conflicts(p, sc, exclude_ids=[sid]), show_alias=True,
+                                    keep_alias=self.pcfg.streets.keep_alias_on_rename,
+                                    info=f"The new name will be written to <b>{seg}</b> centerline(s) and "
+                                         f"<b>{adr}</b> address point(s) that use this street.")
             if not dlg.exec():
                 return
             new_name = N.full_name(dlg.parts())

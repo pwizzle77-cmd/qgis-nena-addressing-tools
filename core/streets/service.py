@@ -26,6 +26,7 @@ from ..rules import ERROR, INFO, WARNING, Issue
 from ..schema import auto_map
 from . import names as N
 from .repository import StreetRepository
+from .street_types import merged_abbreviations
 
 _SUPPRESS = [0]
 
@@ -123,8 +124,12 @@ class StreetService:
                     out.setdefault(sid, [0, 0])[k] += 1
         return {k: (v[0], v[1]) for k, v in out.items()}
 
+    def _abbr(self):
+        extra = getattr(getattr(self.pcfg, "street_types", None), "abbreviations", None)
+        return merged_abbreviations(extra)
+
     def conflicts(self, parts, scope="", exclude_ids: Sequence[str] = ()) -> List[N.Conflict]:
-        return N.find_conflicts(parts, scope, self.repo.records(), self.rule, exclude_ids)
+        return N.find_conflicts(parts, scope, self.repo.records(), self.rule, exclude_ids, self._abbr())
 
     def _check(self, parts, scope, exclude_ids=(), allow_warnings=True):
         if not N.clean(parts.get("St_Name")):
@@ -161,7 +166,8 @@ class StreetService:
         rec.scope = new_scope
         with suppressed():
             self.repo.update([rec], "NENA: rename street")
-            if keep and N.name_key(old.parts) != N.name_key(rec.parts):
+            abbr = self._abbr()
+            if keep and N.name_key(old.parts, abbreviations=abbr) != N.name_key(rec.parts, abbreviations=abbr):
                 self.repo.add([old], "NENA: keep old street name as alias")
             changed = self._push_parts({sid: rec}, "NENA: rename street (cascade)")
         changed["warnings"] = len(warnings)
@@ -273,7 +279,7 @@ class StreetService:
                 rep.unnamed += 1
                 continue
             named.append((parts, self._scope_of(ll, f)))
-        rep.groups = N.group_variants(named)
+        rep.groups = N.group_variants(named, self._abbr())
         rep.soundalikes = N.soundalike_groups(rep.groups)
         return rep
 
@@ -292,7 +298,8 @@ class StreetService:
         for g in rep.groups:
             if chosen and (g.scope, g.key) in chosen:
                 g.chosen = chosen[(g.scope, g.key)]
-        existing = {(self.rule.scope_of(r.scope), N.name_key(r.parts)): r
+        abbr = self._abbr()
+        existing = {(self.rule.scope_of(r.scope), N.name_key(r.parts, abbreviations=abbr)): r
                     for r in self.repo.records() if r.active}
         to_add = []
         by_key: Dict[Tuple[str, str], N.StreetRecord] = {}
@@ -333,9 +340,10 @@ class StreetService:
         stamp = datetime.now().replace(microsecond=0)
         changes, linked, rewritten = {}, 0, 0
         known = {r.street_id for r in by_key.values()} | set(self.repo.by_id())
+        abbr = self._abbr()
         for f in ll.layer.getFeatures():
             parts = {p: ll.acc.get(f, p) for p in N.NAME_PARTS}
-            key = N.name_key(parts)
+            key = N.name_key(parts, abbreviations=abbr)
             if not key:
                 continue
             current = N.clean(ll.acc.get(f, "StreetID"))
@@ -375,7 +383,7 @@ class StreetService:
         for f in ll.layer.getFeatures():
             sid = N.clean(ll.acc.get(f, "StreetID"))
             parts = {p: N.clean(ll.acc.get(f, p)) for p in N.NAME_PARTS}
-            named = bool(N.name_key(parts))
+            named = bool(N.name_key(parts, abbreviations=self._abbr()))
             if not sid:
                 if named:
                     out.append(Issue(f.id(), WARNING, "STREETID_MISSING",
@@ -398,7 +406,8 @@ class StreetService:
         """Problems inside the master table (fid = master-table feature)."""
         out = []
         recs = self.repo.records()
-        for g in N.duplicate_groups(recs, self.rule):
+        abbr = self._abbr()
+        for g in N.duplicate_groups(recs, self.rule, abbr):
             names = " / ".join(r.full_name for r in g)
             for r in g:
                 out.append(Issue(r.fid, ERROR if self.rule.action == "block" else WARNING, "NAME_DUPLICATE",
@@ -409,7 +418,7 @@ class StreetService:
                 if r.active and r.full_name:
                     groups.setdefault((self.rule.scope_of(r.scope), N.soundalike_key(r.parts)), []).append(r)
             for g in groups.values():
-                keys = {N.name_key(r.parts, self.rule.strictness) for r in g}
+                keys = {N.name_key(r.parts, self.rule.strictness, abbr) for r in g}
                 if len(keys) > 1:
                     names = " / ".join(sorted(r.full_name for r in g))
                     for r in g:

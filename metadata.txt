@@ -10,10 +10,12 @@ about=Datasource-independent NG9-1-1 addressing tools (GeoPackage, PostGIS, SQL 
     interval, proportional or from address points) with parity handling, automatically redistribute ranges
     when a centerline is split or merged, and validate for gaps, overlaps, parity, direction, domain and
     NGUID problems. All edits go through the edit buffer and are undoable. Pure PyQGIS, no extra dependencies.
-version=3.2.8
+version=3.2.10
 author=NENA RCL Tools contributors
 email=noreply@example.com
-changelog=3.2.8 - The panel is organized into Streets, Addresses, Ranges, Check, and Settings. Daily actions stay on the work tabs. Schema, field mapping, sides, defaults, and rules are on Settings. Save at the top stores the panel settings.
+changelog=3.2.10 - The readme is a user guide. It explains what each tool does and how the settings work, in plain language.
+    3.2.9 - Place address, Draw driveway, and Place units are separate tools. A driveway is not created unless you ask for one. Place units numbers several rooftops from one access point. The street-name form uses an editable NENA/USPS street-type list.
+    3.2.8 - The panel is organized into Streets, Addresses, Ranges, Check, and Settings. Daily actions stay on the work tabs. Schema, field mapping, sides, defaults, and rules are on Settings. Save at the top stores the panel settings.
     3.2.7 - On a database layer, WhoEntered and LastUpdatedBy use the login from the QGIS connection. WhoEntered is filled only when it is empty. LastUpdatedBy is written on each new or changed feature. Change tracking stores that same login in ChangedBy.
     3.2.6 - Split a centerline where the side changes, split existing roads at intersections, and close address-range gaps. Compare centerlines to an MSAG table. Default values for state, county, one-way, parity, and other fields that rarely change fill only empty fields.
     3.2.5 - ZIP, MSAG, and ESN polygons are chosen on the Fields tab and calculate the left and right side of the centerline. An address copies the side of the road it sits on.

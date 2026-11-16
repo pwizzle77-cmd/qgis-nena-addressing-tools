@@ -8,6 +8,38 @@ def P(**kw):
     return N.parts_from(kw)
 
 
+def test_street_types_standardize_and_round_trip():
+    from nena_rcl_tools.core.project_config import ProjectConfig
+    from nena_rcl_tools.core.streets import street_types as ST
+
+    assert ST.display_type("ST") == "Street"
+    assert ST.display_type("glen") == "Glen"
+    assert ST.display_type("CO RD") == "County Road"
+    assert ST.display_type("Loop") == "Loop"
+    assert ST.display_type("Not A Type") == "Not A Type"
+    assert "Glen" in ST.OFFICIAL_TYPES and "Path" in ST.OFFICIAL_TYPES and "Court" in ST.OFFICIAL_TYPES
+    abbr = ST.merged_abbreviations({"PVT LN": "Lane"})
+    assert N.name_key(P(St_Name="Oak", St_PosTyp="Glen")) == N.name_key(P(St_Name="Oak", St_PosTyp="GLN"))
+    assert N.name_key(P(St_Name="Oak", St_PosTyp="Pvt Ln"), abbreviations=abbr) == \
+        N.name_key(P(St_Name="Oak", St_PosTyp="Lane"), abbreviations=abbr)
+    hits = N.find_conflicts(P(St_Name="Oak", St_PosTyp="GLN"), "",
+                            [_rec("1", St_Name="Oak", St_PosTyp="Glen")], N.UniquenessRule())
+    assert hits and hits[0].kind == "duplicate"
+    cfg = ProjectConfig()
+    assert cfg.addresses.create_driveway is False
+    assert cfg.street_types.custom is False
+    cfg.street_types.custom = True
+    cfg.street_types.types = ["Street", "Glen"]
+    cfg.street_types.abbreviations = {"GLN": "Glen"}
+    again = ProjectConfig.from_json(cfg.to_json())
+    assert again.street_types.custom is True
+    assert again.street_types.types == ["Street", "Glen"]
+    assert again.street_types.abbreviations["GLN"] == "Glen"
+    legacy = ProjectConfig.from_dict({"addresses": {"create_driveway": True}})
+    assert legacy.addresses.create_driveway is True
+    assert legacy.street_types.types == []
+
+
 def test_full_name_and_keys():
     p = P(St_PreDir="N", St_Name="Main", St_PosTyp="St")
     assert N.full_name(p) == "N Main St"

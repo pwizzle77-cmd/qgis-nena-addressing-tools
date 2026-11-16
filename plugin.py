@@ -16,7 +16,7 @@ from .core.split_handler import WatcherManager
 from .core.streets.sync import StreetWatcherManager
 from .ui.dock import NenaDock, TITLE
 from .ui.split_tool import SplitRerangeTool
-from .ui.address_tool import AddressTool
+from .ui.address_tool import AddressTool, DrawDrivewayTool, PlaceUnitsTool
 from .ui.address_overlay import AddressOverlay
 from .core.addressing import engine as AE
 from .core.layer_access import ConfigError
@@ -53,6 +53,8 @@ class NenaRclPlugin:
         self.archive_watchers = None
         self.split_tool = None
         self.address_tool = None
+        self.driveway_tool = None
+        self.units_tool = None
         self.overlay = None
 
     # ------------------------------------------------------------------
@@ -79,8 +81,12 @@ class NenaRclPlugin:
                                                 lambda *_: self._dock().create_archive_schema())
         self.act_streets = self._add_action("streets.svg", "Master street names",
                                             lambda *_: self.show_tab("streets"))
-        self.act_address = self._add_action("address.svg", "Address && driveway tool (click road, then rooftop)",
+        self.act_address = self._add_action("address.svg", "Place address (click road, then rooftop)",
                                             self.activate_address_tool, checkable=True, use_toggled=False)
+        self.act_driveway = self._add_action("driveway.svg", "Draw driveway (click road, then the path)",
+                                             self.activate_driveway_tool, checkable=True, use_toggled=False)
+        self.act_units = self._add_action("units.svg", "Place units (one access, many rooftops)",
+                                          self.activate_units_tool, checkable=True, use_toggled=False)
         self.act_undo_addr = self._add_action("undo_address.svg", "Undo last address",
                                               lambda *_: self._undo_address())
         self.act_range = self._add_action("range.svg", "Auto-range selected centerlines",
@@ -98,9 +104,14 @@ class NenaRclPlugin:
 
         self.split_tool = SplitRerangeTool(self.iface.mapCanvas(), self._split_target, self._notify)
         self.split_tool.setAction(self.act_split_tool)
-        self.address_tool = AddressTool(self.iface.mapCanvas(), self._address_context, self._notify,
-                                        on_created=lambda ids: self.overlay and self.overlay.refresh())
+        canvas = self.iface.mapCanvas()
+        refresh = lambda ids: self.overlay and self.overlay.refresh()
+        self.address_tool = AddressTool(canvas, self._address_context, self._notify, on_created=refresh)
         self.address_tool.setAction(self.act_address)
+        self.driveway_tool = DrawDrivewayTool(canvas, self._address_context, self._notify, on_created=refresh)
+        self.driveway_tool.setAction(self.act_driveway)
+        self.units_tool = PlaceUnitsTool(canvas, self._address_context, self._notify, on_created=refresh)
+        self.units_tool.setAction(self.act_units)
         self.overlay = AddressOverlay(self.iface)
         from qgis.core import QgsProject
         QgsProject.instance().readProject.connect(self._project_loaded)
@@ -130,11 +141,14 @@ class NenaRclPlugin:
             QgsProject.instance().readProject.disconnect(self._project_loaded)
         except (TypeError, RuntimeError):
             pass
-        if self.address_tool is not None:
-            if self.iface.mapCanvas().mapTool() is self.address_tool:
-                self.iface.mapCanvas().unsetMapTool(self.address_tool)
-            self.address_tool.cleanup()
-            self.address_tool = None
+        for name in ("address_tool", "driveway_tool", "units_tool"):
+            tool = getattr(self, name, None)
+            if tool is None:
+                continue
+            if self.iface.mapCanvas().mapTool() is tool:
+                self.iface.mapCanvas().unsetMapTool(tool)
+            tool.cleanup()
+            setattr(self, name, None)
         if self.overlay is not None:
             self.overlay.unload()
             self.overlay = None
@@ -293,6 +307,8 @@ class NenaRclPlugin:
             self.dock.cb_layer.layerChanged.connect(self._sync_auto_action)
             self.dock.splitToolRequested.connect(self.activate_split_tool)
             self.dock.addressToolRequested.connect(self.activate_address_tool)
+            self.dock.drivewayToolRequested.connect(self.activate_driveway_tool)
+            self.dock.unitsToolRequested.connect(self.activate_units_tool)
             self.dock.projectConfigSaved.connect(self._config_saved)
             self.dock.hide()
             QTimer.singleShot(0, self._install_dock)
@@ -354,8 +370,37 @@ class NenaRclPlugin:
             self.show_tab("addresses")
             return
         self.iface.mapCanvas().setMapTool(self.address_tool)
-        self._notify("Info", "Address tool: click the road at the driveway entrance, optional bends, then "
-                             "right-click (or double-click) the rooftop. Backspace removes a click, Esc cancels.")
+        self._notify("Info", "Place address: click the road (or a driveway) for the access point, then click "
+                             "the rooftop. Hold Shift to also draw a straight driveway. Esc cancels.")
+
+    def activate_driveway_tool(self, *args):
+        try:
+            ctx = self._address_context()
+        except ConfigError as exc:
+            self._notify("Warning", str(exc))
+            self.act_driveway.setChecked(False)
+            self.show_tab("addresses")
+            return
+        if ctx.dw is None:
+            self._notify("Warning", "Choose a driveway layer on the Addresses tab first.")
+            self.act_driveway.setChecked(False)
+            self.show_tab("addresses")
+            return
+        self.iface.mapCanvas().setMapTool(self.driveway_tool)
+        self._notify("Info", "Draw driveway: click the road where the driveway meets it, click each bend, "
+                             "then right-click or double-click to finish. Esc cancels.")
+
+    def activate_units_tool(self, *args):
+        try:
+            self._address_context()
+        except ConfigError as exc:
+            self._notify("Warning", str(exc))
+            self.act_units.setChecked(False)
+            self.show_tab("addresses")
+            return
+        self.iface.mapCanvas().setMapTool(self.units_tool)
+        self._notify("Info", "Place units: click the shared access once, then each rooftop. "
+                             "Right-click or Esc ends this access. Esc again leaves the tool.")
 
     def _undo_address(self):
         try:

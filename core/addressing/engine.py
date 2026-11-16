@@ -37,6 +37,7 @@ from .ssap import COMMUNITY_FIELDS, DRIVEWAY_FIELDS, SSAP_FIELDS
 
 ADDRESS_COMMAND = "NENA: add address"
 DRIVEWAY_COMMAND = "NENA: add driveway"
+DRAW_DRIVEWAY_COMMAND = "NENA: draw driveway"
 _NUM = re.compile(r"^\s*(\d+)\s*([A-Za-z]?)")
 
 # features created by the address tool, newest last: [(layer_id, fid), ...] per address
@@ -530,6 +531,57 @@ def _write_driveway(ctx: AddressContext, plan: AddressPlan, site_nguid, stamp) -
         raise ConfigError("The driveway layer refused the new line.")
     ctx.dw.endEditCommand()
     return feat.id()
+
+
+def _distinct_chain(points: Sequence[QgsPointXY]) -> List[QgsPointXY]:
+    chain = []
+    for pt in points:
+        if pt is None:
+            continue
+        if chain and pt.x() == chain[-1].x() and pt.y() == chain[-1].y():
+            continue
+        chain.append(pt)
+    return chain
+
+
+def commit_driveway(ctx: AddressContext, access: QgsPointXY, vertices: Sequence[QgsPointXY] = (),
+                    segment_fid: Optional[Hashable] = None, parent_driveway: str = "") -> Hashable:
+    """
+    Write a driveway that is not yet tied to an address.
+
+    The line starts at the access point (the centerline, or the click on an
+    existing driveway). Later address points link to it by snapping to it.
+    This is its own undo step. It is not part of *Undo last address*.
+    """
+    if ctx.dw is None or ctx.dw_acc is None:
+        raise ConfigError("Choose a driveway layer on the Addresses tab first.")
+    chain = _distinct_chain([access] + list(vertices))
+    if len(chain) < 2:
+        raise ConfigError("A driveway needs the access point and at least one more point.")
+    sid, rcl_nguid = "", ""
+    if segment_fid is not None:
+        feat = next(ctx.rcl.getFeatures(QgsFeatureRequest().setFilterFid(segment_fid)), None)
+        if feat is not None:
+            sid, _parts = ctx.street_of(feat)
+            rcl_nguid = str(ctx.rcl_acc.get(feat, "RCL_NGUID") or "")
+    xf = _xf(ctx.rcl.crs(), ctx.dw.crs())
+    geom = QgsGeometry.fromPolylineXY([xf.transform(p) for p in chain])
+    if QgsWkbTypes.isMultiType(ctx.dw.wkbType()):
+        geom.convertToMultiType()
+    acc = ctx.dw_acc
+    stamp = datetime.now().replace(microsecond=0)
+    vals = {"DW_NGUID": _new_nguid(ctx, "DW"), "RCL_NGUID": rcl_nguid or None,
+            "StreetID": sid or None, "Parent_DW": parent_driveway or None, "DateUpdate": stamp}
+    attrs = {acc.index[k]: acc.coerce(k, v) for k, v in vals.items() if acc.has(k)}
+    created = QgsVectorLayerUtils.createFeature(ctx.dw, geom, attrs, ctx.dw.createExpressionContext())
+    with suppressed():
+        ensure_editable(ctx.dw)
+        ctx.dw.beginEditCommand(DRAW_DRIVEWAY_COMMAND)
+        if not ctx.dw.addFeature(created):
+            ctx.dw.destroyEditCommand()
+            raise ConfigError("The driveway layer refused the new line.")
+        ctx.dw.endEditCommand()
+    return created.id()
 
 
 def undo_last_address() -> int:
