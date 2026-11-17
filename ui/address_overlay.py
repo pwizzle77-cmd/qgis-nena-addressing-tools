@@ -21,6 +21,7 @@ from ..core.config import load_from_layer
 from ..core.layer_access import ConfigError
 from ..core.project_config import layer_for, load_project_config
 from ..core.streets import names as N
+from ..core.qt_safety import safe_disconnect
 
 BLUE, RED, GREY = QColor(30, 110, 220), QColor(210, 40, 40), QColor(120, 120, 120)
 
@@ -63,17 +64,11 @@ class AddressOverlay:
     def unload(self):
         self.clear()
         self._disconnect()
-        try:
-            self.canvas.extentsChanged.disconnect(self._reposition)
-        except (TypeError, RuntimeError):
-            pass
+        safe_disconnect(self.canvas, self.canvas.extentsChanged, self._reposition)
 
     def _disconnect(self):
         if self.layer is not None:
-            try:
-                self.layer.selectionChanged.disconnect(self._on_selection)
-            except (TypeError, RuntimeError):
-                pass
+            safe_disconnect(self.layer, self.layer.selectionChanged, self._on_selection)
         self.layer = None
 
     def refresh(self, *args):

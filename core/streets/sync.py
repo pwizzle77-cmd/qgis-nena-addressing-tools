@@ -23,6 +23,7 @@ from qgis.PyQt.QtCore import QObject, QTimer
 from ..project_config import layer_for, load_project_config
 from .names import NAME_PARTS
 from .service import StreetService, is_suppressed
+from ..qt_safety import disconnect_all, safe_disconnect
 
 
 class StreetWatcherManager(QObject):
@@ -43,24 +44,17 @@ class StreetWatcherManager(QObject):
     def unload(self):
         prj = QgsProject.instance()
         for sig in (prj.readProject, prj.layersAdded):
-            try:
-                sig.disconnect(self.refresh)
-            except (TypeError, RuntimeError):
-                pass
+            safe_disconnect(prj, sig, self.refresh)
         self._detach()
 
     def _detach(self):
-        for sig, slot in self._conns:
-            try:
-                sig.disconnect(slot)
-            except (TypeError, RuntimeError):
-                pass
+        disconnect_all(self._conns)
         self._conns = []
         self._layers = {}
 
-    def _connect(self, sig, slot):
+    def _connect(self, owner, sig, slot):
         sig.connect(slot)
-        self._conns.append((sig, slot))
+        self._conns.append((owner, sig, slot))
 
     def refresh(self, *args):
         """(Re)attach to the layers named in the project configuration."""
@@ -72,14 +66,14 @@ class StreetWatcherManager(QObject):
             return
         self._layers["master"] = master
         if s.cascade_direct_edits:
-            self._connect(master.attributeValueChanged, self._on_master_changed)
+            self._connect(master, master.attributeValueChanged, self._on_master_changed)
         if s.copy_on_assign:
             for role in ("centerline", "address"):
                 lyr = layer_for(s, role)
                 if lyr is None:
                     continue
                 self._layers[role] = lyr
-                self._connect(lyr.attributeValueChanged,
+                self._connect(lyr, lyr.attributeValueChanged,
                               lambda fid, idx, value, r=role: self._on_linked_changed(r, fid, idx))
 
     # -- signal handlers -----------------------------------------------------

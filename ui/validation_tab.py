@@ -135,7 +135,7 @@ class ValidationTab(QWidget):
         form.addRow(self.chk_select_overlaps)
         clay.addWidget(g)
         clay.addLayout(form)
-        clay.addWidget(hint("Saved with the centerline when you click Save."))
+        clay.addWidget(hint("Saved with the centerline automatically."))
         clay.addStretch(1)
         self.pages.addTab(checks, "Checks")
 

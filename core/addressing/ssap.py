@@ -71,6 +71,11 @@ SSAP_FIELDS = [
     FieldDef("Access_X", O, D, 0, "Plugin: access point X (layer CRS)"),
     FieldDef("Access_Y", O, D, 0, "Plugin: access point Y (layer CRS)"),
     FieldDef("Addr_Side", O, S, 1, "Plugin: side of the road (L/R)"),
+    FieldDef("AccessPointID", O, S, 38, "Plugin: access point this address is reached from",
+             ("ACCESS_ID", "AP_ID", "ACCESSPOINTID")),
+    FieldDef("UnitType", O, S, 32, "Plugin: unit type code (Apt, Suite, …)", ("UNIT_TYPE", "UNITTYPE")),
+    FieldDef("AddressStatus", O, S, 32, "Plugin: address status code", ("ADDR_STATUS", "ADDRESSSTATUS")),
+    FieldDef("AddressType", O, S, 32, "Plugin: what this address represents", ("ADDR_TYPE", "ADDRESSTYPE")),
 ]
 
 DRIVEWAY_FIELDS = [
@@ -79,9 +84,21 @@ DRIVEWAY_FIELDS = [
     FieldDef("RCL_NGUID", O, S, 254, "Centerline segment it connects to"),
     FieldDef("StreetID", O, S, 38, "Master street name"),
     FieldDef("Parent_DW", O, S, 254, "Shared driveway this spur branches from"),
+    FieldDef("AccessPointID", O, S, 38, "Access point this driveway leaves", ("ACCESS_ID", "AP_ID")),
     FieldDef("DateUpdate", O, DT, 0, "Date updated"),
     WHO_ENTERED,
     LAST_UPDATED_BY,
+]
+
+ACCESS_FIELDS = [
+    FieldDef("AccessPointID", O, S, 38, "Access point id"),
+    FieldDef("RCL_NGUID", O, S, 254, "Centerline segment the access leaves"),
+    FieldDef("StreetID", O, S, 38, "Master street name"),
+    FieldDef("RoadSide", O, S, 1, "Side of the road (L/R)"),
+    FieldDef("DateUpdate", O, DT, 0, "Date updated"),
+    WHO_ENTERED,
+    LAST_UPDATED_BY,
+    FieldDef("Notes", O, S, 254, "Notes"),
 ]
 
 PLACEMENT_VALUES = ("Structure", "Site", "Property Access", "Parcel", "Geocoding", "Unknown")

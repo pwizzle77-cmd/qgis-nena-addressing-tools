@@ -17,7 +17,8 @@ from nena_rcl_tools.core import config as C  # noqa: E402
 from nena_rcl_tools.core.addressing import engine as E  # noqa: E402
 from nena_rcl_tools.core.addressing.checks import address_issues, centerline_boundary_issues  # noqa: E402
 from nena_rcl_tools.core.addressing.reports import addresses_by_community_report, streets_report  # noqa: E402
-from nena_rcl_tools.core.layer_access import ConfigError  # noqa: E402
+from nena_rcl_tools.core.config import PluginConfig  # noqa: E402
+from nena_rcl_tools.core.layer_access import ConfigError, FieldAccessor  # noqa: E402
 from nena_rcl_tools.core.project_config import ProjectConfig, remember, save_project_config  # noqa: E402
 from nena_rcl_tools.core.streets.repository import MASTER_SCHEMA  # noqa: E402
 from nena_rcl_tools.core.streets.service import StreetService  # noqa: E402
@@ -143,6 +144,80 @@ def test_driveway_is_off_unless_asked_and_a_drawn_driveway_is_separate(world):
     assert [(p.x(), p.y()) for p in line] == [(40, 0), (48, 25)]
 
 
+def test_place_address_saves_an_access_point_ten_feet_off_the_road(world):
+    """The access point sits 10 feet straight off the click, linked to the address and the road."""
+    addr, rcl = world["addr"], world["rcl"]
+    addr.addAttribute(QgsField("AccessPointID", "string"))
+    access = _layer("access", ["AccessPointID", "RCL_NGUID", "StreetID", "RoadSide", "DateUpdate"])
+    remember(world["pcfg"].addresses, "access", access)
+    ctx = E.AddressContext(world["pcfg"], rcl, world["cfg"])
+    off = 10 * 0.3048
+
+    plan = E.plan_address(ctx, P(50, 0), P(55, 30))
+    ids = E.commit_address(ctx, plan, plan.result.number)
+    assert "driveway" not in ids and ids["access_created"] is True
+    assert attr(addr, ids["address"], "AccessPointID") == ids["access"]
+    assert attr(addr, ids["address"], "RCL_NGUID") == "R1"
+    # The house number is still measured from the click on the road.
+    assert (attr(addr, ids["address"], "Access_X"), attr(addr, ids["address"], "Access_Y")) == (50.0, 0.0)
+    feat = next(f for f in access._feats.values() if _raw(f, access, "AccessPointID") == ids["access"])
+    pt = feat.geometry().asPoint()
+    assert pt.x() == pytest.approx(50)
+    assert pt.y() == pytest.approx(off)
+    assert _raw(feat, access, "RCL_NGUID") == "R1"
+    assert _raw(feat, access, "RoadSide") == "L"
+    assert _raw(feat, access, "StreetID") == "S1"
+
+    again = E.plan_address(ctx, P(50, 0), P(52, 25))
+    ids2 = E.commit_address(ctx, again, again.result.number + 2)
+    assert ids2["access"] == ids["access"] and ids2["access_created"] is False
+    assert len(access._feats) == 1
+
+    right = E.plan_address(ctx, P(40, 0), P(40, -20))
+    ids3 = E.commit_address(ctx, right, right.result.number)
+    other = next(f for f in access._feats.values() if _raw(f, access, "AccessPointID") == ids3["access"])
+    assert other.geometry().asPoint().y() == pytest.approx(-off)
+    assert _raw(other, access, "RoadSide") == "R"
+    assert attr(addr, ids3["address"], "AccessPointID") == ids3["access"]
+
+    # Walking west, "straight out" on the left is south, and the point stays opposite the click.
+    west = rcl.add_committed(["West", "Ln", "S9", "R9", 101, 199, 100, 198, "O", "E", "TOWN A", "TOWN A"],
+                             [(80, 500), (0, 500)])
+    south = E.plan_address(ctx, P(40, 500), P(30, 480), segment_fid=west)
+    assert south.side == "L"
+    ids4 = E.commit_address(ctx, south, south.result.number)
+    seat = next(f for f in access._feats.values() if _raw(f, access, "AccessPointID") == ids4["access"])
+    assert seat.geometry().asPoint().x() == pytest.approx(40)
+    assert seat.geometry().asPoint().y() == pytest.approx(500 - off)
+    assert _raw(seat, access, "RCL_NGUID") == "R9"
+    assert attr(addr, ids4["address"], "RCL_NGUID") == "R9"
+
+
+def _raw(feat, lyr, name):
+    value = feat.attribute(lyr.fields().lookupField(name))
+    return getattr(value, "v", value) if hasattr(value, "isNull") else value
+
+
+def test_sql_server_float_keeps_fractional_coordinates():
+    lyr = QgsVectorLayer("x", "floaty")
+    lyr.addAttribute(QgsField("Access_X", "float"))
+    lyr.addAttribute(QgsField("Add_Number", "int"))
+    acc = FieldAccessor(lyr, PluginConfig(mapping={"Access_X": "Access_X", "Add_Number": "Add_Number"}))
+    assert acc.coerce("Access_X", -82.650071) == pytest.approx(-82.650071)
+    assert acc.coerce("Add_Number", 116.9) == 116
+
+
+def test_whole_degree_access_does_not_number_from_the_end(world):
+    ctx, addr = world["ctx"], world["addr"]
+    far = E.plan_address(ctx, P(90, 0), P(90, 20))
+    ids = E.commit_address(ctx, far, 190, create_driveway=False)
+    feat = addr._feats[ids["address"]]
+    feat.setAttribute(addr.fields().lookupField("Access_X"), -10000)
+    feat.setAttribute(addr.fields().lookupField("Access_Y"), -10000)
+    near = E.plan_address(ctx, P(10, 0), P(10, 20))
+    assert 100 < near.result.number < 150
+
+
 def test_neighbours_keep_order_and_collisions(world):
     ctx = world["ctx"]
     first = E.plan_address(ctx, P(50, 0), P(50, 20))
@@ -162,8 +237,8 @@ def test_interpolation_and_frontage_methods(world):
     assert p.result.number in (249, 251)
     pcfg.addresses.method = "frontage"
     pcfg.addresses.frontage_interval, pcfg.addresses.distance_units = 20.0, "meters"
-    p = E.plan_address(ctx, P(150, 0), P(150, -20))           # 150 m = 7 lots -> 100 + 14 = 114 (even, right)
-    assert p.result.number == 114
+    p = E.plan_address(ctx, P(150, 0), P(150, -20))           # 50 m into R2 = 2 lots -> From_R 200 + 4 = 204
+    assert p.result.number == 204
 
 
 def test_overrides_per_community(world):
@@ -171,8 +246,8 @@ def test_overrides_per_community(world):
     rcl.changeAttributeValues(2, {rcl.fields().lookupField("MSAGComm_R"): "TOWN B"})
     pcfg.addresses.overrides = {"TOWN B": {"method": "distance", "distance_per_number": 2.0,
                                            "distance_units": "meters", "start_number": 1000}}
-    p = E.plan_address(ctx, P(160, 0), P(160, -30))           # right side is TOWN B: 1000 + 160/2 = 1080
-    assert p.community["MSAGComm"] == "TOWN B" and p.result.number == 1080
+    p = E.plan_address(ctx, P(160, 0), P(160, -30))           # TOWN B spacing on R2: From_R 200 + 60/2 = 230
+    assert p.community["MSAGComm"] == "TOWN B" and p.result.number == 230
 
 
 def test_segment_parity_zero_side_refused(world):
@@ -300,7 +375,8 @@ def test_partial_rename_readdress(world):
     svc.assign(rec.street_id, [a1], role="address")
     rows = E.readdress(ctx, [a1])
     (fid, old, plan), = rows
-    assert old == "251" and plan.street_id == rec.street_id and plan.result.number in (149, 151)
+    # numbered on segment R2 itself: From_L 201 + 50 m
+    assert old == "251" and plan.street_id == rec.street_id and plan.result.number == 251
     assert E.apply_readdress(ctx, [(fid, plan)]) == 1
     assert attr(addr, a1, "Add_Number") == plan.result.number and attr(addr, a1, "St_Name") == "Elm"
     assert attr(addr, a0, "Add_Number") == 151
@@ -324,3 +400,90 @@ def test_reports(world, tmp_path):
     main = [r for r in rows if r["FullName"] == "Main St"][0]
     assert (main["Segments"], main["Addresses"], main["LowestNumber"]) == ("2", "1", "151")
     assert addresses_by_community_report(str(p2), ctx) == 1
+
+
+# ---------------------------------------------------------------------------
+# Left / right on roads in every direction (odd on the left, even on the right)
+# ---------------------------------------------------------------------------
+def _add_road(world, name, fid_tag, coords):
+    world["rcl"].add_committed([name, "Rd", "", fid_tag, None, None, None, None, "O", "E", "TOWN A", "TOWN A"],
+                               coords)
+
+
+@pytest.mark.parametrize("coords, house, side", [
+    ([(300, 0), (300, 100)], (320, 50), "R"),     # drawn south -> north: east is right
+    ([(300, 0), (300, 100)], (280, 50), "L"),     # drawn south -> north: west is left
+    ([(300, 100), (300, 0)], (320, 50), "L"),     # drawn north -> south: east is left
+    ([(300, 100), (300, 0)], (280, 50), "R"),     # drawn north -> south: west is right
+    ([(300, 0), (400, 0)], (350, 20), "L"),       # drawn west -> east: north is left
+    ([(400, 0), (300, 0)], (350, 20), "R"),       # drawn east -> west: north is right
+])
+def test_side_and_parity_follow_the_drawn_direction(world, coords, house, side):
+    _add_road(world, "Birch", "RB", coords)
+    mid = ((coords[0][0] + coords[1][0]) / 2, (coords[0][1] + coords[1][1]) / 2)
+    plan = E.plan_address(world["ctx"], P(*mid), P(*house))
+    assert plan.side == side
+    assert plan.parity == ("O" if side == "L" else "E")
+    assert plan.result.number % 2 == (1 if side == "L" else 0)
+
+
+def test_place_units_offers_a_number_for_each_side(world):
+    # Oak Ave runs south -> north from (100, 0) to (100, 100)
+    ctx = world["ctx"]
+    fid = next(f.id() for f in world["rcl"].getFeatures()
+               if f.attribute(world["rcl"].fields().lookupField("RCL_NGUID")) == "R3")
+    numbers = E.house_numbers_by_side(ctx, fid, P(100, 50))
+    assert numbers["L"] % 2 == 1 and numbers["R"] % 2 == 0
+    west = E.plan_address(ctx, P(100, 50), P(80, 50), segment_fid=fid)
+    east = E.plan_address(ctx, P(100, 50), P(120, 50), segment_fid=fid)
+    assert (west.side, east.side) == ("L", "R")
+    assert numbers[west.side] == west.result.number
+    assert numbers[east.side] == east.result.number
+
+
+def test_parity_matches():
+    assert E.parity_matches(101, "O") and not E.parity_matches(101, "E")
+    assert E.parity_matches(100, "E") and not E.parity_matches(100, "O")
+    assert E.parity_matches(7, "B") and E.parity_matches(8, "")
+
+
+def test_an_address_on_a_separate_piece_of_the_street_does_not_push_the_number(world):
+    ctx = world["ctx"]
+    rcl = world["rcl"]
+    # Two unconnected pieces of Pine Rd, both drawn east -> west, each measuring from its own start
+    rcl.add_committed(["Pine", "Rd", "", "P1", 100, 310, 101, 311, "E", "O", "TOWN A", "TOWN A"],
+                      [(800, 300), (600, 300)])
+    rcl.add_committed(["Pine", "Rd", "", "P2", 400, 498, 401, 499, "E", "O", "TOWN A", "TOWN A"],
+                      [(1500, 300), (1300, 300)])
+    far = E.plan_address(ctx, P(1470, 300), P(1470, 280))
+    E.commit_address(ctx, far, 418, create_driveway=False)
+    ctx = E.AddressContext(world["pcfg"], rcl, world["cfg"])
+    plan = E.plan_address(ctx, P(700, 300), P(700, 280))
+    # P1 is drawn east -> west, so south is left. The settings put odd numbers on the left;
+    # the segment's Parity_L (E) is reported, not followed. From_L 100 + 100 m -> 199.
+    assert plan.side == "L" and plan.parity == "O"
+    assert plan.result.number == 199
+    assert not any("418" in m for m in plan.messages)
+    assert any("Parity_L says even" in m for m in plan.messages)
+
+
+def test_numbers_come_from_the_clicked_segment_not_the_rest_of_the_street(world):
+    ctx, pcfg = world["ctx"], world["pcfg"]
+    # An address far down Main St on R2 must not push numbers on R1
+    E.commit_address(ctx, E.plan_address(ctx, P(190, 0), P(190, 20)), 291, create_driveway=False)
+    ctx = E.AddressContext(pcfg, world["rcl"], world["cfg"])
+    p = E.plan_address(ctx, P(30, 0), P(30, 20))                 # R1 left: From_L 101 + 30 m
+    assert p.result.number == 131 and not p.messages
+    pcfg.addresses.method = "interpolate"
+    p = E.plan_address(ctx, P(25, 0), P(25, -20))                # R1 right 100..198, a quarter along
+    assert p.side == "R" and p.result.number in (124, 126)
+
+
+def test_segment_parity_can_win_when_asked(world):
+    rcl, pcfg = world["rcl"], world["pcfg"]
+    rcl.changeAttributeValues(1, {rcl.fields().lookupField("Parity_L"): "E"})
+    plan = E.plan_address(world["ctx"], P(50, 0), P(50, 20))
+    assert plan.parity == "O" and any("Parity_L says even" in m for m in plan.messages)
+    pcfg.addresses.segment_parity_wins = True
+    plan = E.plan_address(world["ctx"], P(50, 0), P(50, 20))
+    assert plan.parity == "E" and plan.result.number % 2 == 0

@@ -123,6 +123,8 @@ RCL_FIELDS: List[FieldDef] = [
     # plugin link field (not part of NENA-STA-006): the master street name this segment uses
     FieldDef("StreetID", OPTIONAL, T_STRING, 38, "Plugin link to the master street names table (not a NENA field)",
              ("STREET_ID", "STREETGUID", "ST_ID")),
+    FieldDef("RoadStatus", OPTIONAL, T_STRING, 32, "Plugin: road status code (Active, Proposed, Private, …)",
+             ("ROAD_STATUS", "ROADSTATUS", "RD_STATUS")),
 ]
 
 FIELDS_BY_NAME = {f.name: f for f in RCL_FIELDS}

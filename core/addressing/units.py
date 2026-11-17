@@ -2,7 +2,7 @@
 """Sequential unit labels for one shared access point. Pure Python."""
 
 
-SCHEMES = ("increment", "letter", "unit")
+SCHEMES = ("increment", "letter", "unit", "alpha", "pair", "building")
 
 
 def _letters(index: int) -> str:
@@ -23,8 +23,11 @@ def next_unit(scheme: str, index: int, base: int, prefix: str = "", start: int =
 
     ``index`` is how many units have already been placed (0 is the next one).
     ``base`` is the street number they share, except for ``increment``, which
-    walks 101, 102, 103. ``letter`` walks 101A, 101B. ``unit`` keeps the street
-    number and writes ``1``, ``2`` or ``Unit 1``, ``Unit 2`` into the unit field.
+    walks 101, 102, 103. ``letter`` walks 101A, 101B in the suffix. ``unit``
+    keeps the street number and writes ``1``, ``2`` or ``Unit 1``. ``alpha``
+    writes A, B, C into the unit field. ``pair`` writes 1A, 1B. ``building``
+    keeps the street number and writes the unit number; the building id is
+    chosen on the panel and stored separately.
 
     :returns: (number, suffix, unit)
     """
@@ -38,15 +41,23 @@ def next_unit(scheme: str, index: int, base: int, prefix: str = "", start: int =
     prefix = "" if prefix is None else str(prefix)
     if scheme == "letter":
         return base, _letters(start - 1 + index), ""
+    if scheme == "alpha":
+        return base, "", _letters(start - 1 + index)
+    if scheme == "pair":
+        return base, "", f"{start}{_letters(index)}"
     if scheme == "unit":
         return base, "", f"{prefix}{start + index}"
+    if scheme == "building":
+        return base, "", str(start + index)
     return base + index, "", ""
 
 
 def preview(scheme: str, number: int, suffix: str, unit: str) -> str:
     """Short text for the floating panel."""
-    if scheme == "unit":
+    if scheme in ("unit", "pair", "building"):
         return unit
+    if scheme == "alpha":
+        return f"{number} {unit}".strip()
     if scheme == "letter":
         return f"{number}{suffix}"
     return str(number)

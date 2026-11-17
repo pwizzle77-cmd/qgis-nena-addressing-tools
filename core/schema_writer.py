@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Create the fresh NENA schema (centerlines, street names, address points, driveways)."""
+"""Create the fresh NENA schema (centerlines, street names, address points, driveways, access points, lookups)."""
 
 import os
 from dataclasses import dataclass, field
@@ -9,7 +9,7 @@ from qgis.core import QgsCoordinateReferenceSystem, QgsFields, QgsMessageLog
 from ..compat import make_field, msg_level
 from . import tables
 from .layer_access import ConfigError
-from .schema_pack import (SCHEMA_LAYERS, VERSION_TABLE_SUFFIX, archive_field_defs, defs_for,
+from .schema_pack import (CREATABLE_LAYERS, VERSION_TABLE_SUFFIX, archive_field_defs, defs_for,
                          normalize_container_path, qualified_table)
 
 LOG_TAG = "NENA Addressing Tools"
@@ -43,13 +43,13 @@ def planned_tables(target: SchemaTarget, keys, include_archive: bool = False, ar
     if archive_only:
         include_archive = True
     plan = []
-    for spec in SCHEMA_LAYERS:
+    for spec in CREATABLE_LAYERS:
         if spec.key not in wanted:
             continue
         try:
             if not archive_only:
                 plan.append((spec, qualified_table(spec.table, target.prefix), False))
-            if include_archive:
+            if include_archive and spec.versioned:
                 plan.append((spec, qualified_table(spec.table, target.prefix, VERSION_TABLE_SUFFIX), True))
         except ValueError as exc:
             raise ConfigError(str(exc)) from exc

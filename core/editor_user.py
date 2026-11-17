@@ -20,6 +20,7 @@ from ..compat import py_value
 from .config import load_from_layer
 from .project_config import layer_for, load_project_config
 from .schema import LAST_UPDATED_BY, WHO_ENTERED, normalize_name
+from .qt_safety import disconnect_all, safe_disconnect
 
 # Provider keys that store a login on the QGIS connection. SpatiaLite and
 # OGR files do not.
@@ -288,7 +289,8 @@ def _live_layers() -> dict:
             (pcfg.streets, "centerline"),
             (pcfg.streets, "master"),
             (pcfg.streets, "address"),
-            (pcfg.addresses, "driveway")):
+            (pcfg.addresses, "driveway"),
+            (pcfg.addresses, "access")):
         layer = layer_for(settings, role)
         if layer is not None:
             found[layer.id()] = layer
@@ -319,18 +321,11 @@ class EditorUserWatcher(QObject):
         for signal in (project.readProject, project.layersAdded, getattr(project, "layersRemoved", None)):
             if signal is None:
                 continue
-            try:
-                signal.disconnect(self.refresh)
-            except (TypeError, RuntimeError):
-                pass
+            safe_disconnect(project, signal, self.refresh)
         self._detach()
 
     def _detach(self):
-        for signal, slot in self._conns:
-            try:
-                signal.disconnect(slot)
-            except (TypeError, RuntimeError):
-                pass
+        disconnect_all(self._conns)
         self._conns = []
         self._layers = {}
 
@@ -343,7 +338,7 @@ class EditorUserWatcher(QObject):
                 continue
             slot = lambda *_, lid=layer_id: self._before(lid)
             signal.connect(slot)
-            self._conns.append((signal, slot))
+            self._conns.append((layer, signal, slot))
 
     def _before(self, layer_id):
         layer = self._layers.get(layer_id)

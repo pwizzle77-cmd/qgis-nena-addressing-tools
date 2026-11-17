@@ -10,7 +10,7 @@ from qgis.core import QgsCoordinateReferenceSystem, QgsProject, QgsRectangle, Qg
 from qgis.gui import QgsMapLayerComboBox
 from qgis.PyQt.QtCore import QCoreApplication, QSettings, QSize, Qt, pyqtSignal
 from qgis.PyQt.QtWidgets import (QCheckBox, QDockWidget, QFileDialog, QGroupBox, QHBoxLayout, QInputDialog,
-                                 QLabel, QMessageBox, QProgressBar, QPushButton, QTabWidget, QVBoxLayout,
+                                 QLabel, QMessageBox, QProgressBar, QPushButton, QVBoxLayout,
                                  QWidget)
 
 from ..compat import line_layer_filter, msg_level
@@ -44,7 +44,8 @@ from .streets_tab import StreetsTab
 from .addresses_tab import AddressesTab
 from .schema_dialogs import CreateSchemaDialog, ImportDialog
 from .validation_tab import ValidationTab
-from .widgets import FittingScroll, hint, host_groups, icon, page_into
+from .lookup_window import LookupPage
+from .widgets import FittingScroll, Surface, hint, host_groups, page_into
 
 TITLE = "NENA Addressing Tools"
 
@@ -60,6 +61,9 @@ class NenaDock(QDockWidget):
         super().__init__(TITLE, parent)
         self.street_watchers = street_watchers
         self.setObjectName("NenaRclToolsDock")
+        # Message boxes and input dialogs are parented to this (hidden) dock: give them a normal look.
+        from .widgets import apply_normal_look
+        apply_normal_look(self, "NenaRclToolsDock")
         self.setAllowedAreas(Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea
                              | Qt.DockWidgetArea.BottomDockWidgetArea | Qt.DockWidgetArea.TopDockWidgetArea)
         self.iface = iface
@@ -82,27 +86,20 @@ class NenaDock(QDockWidget):
         self.lbl_cfg = QLabel("")
         self.lbl_cfg.setWordWrap(True)
         header_lay.addWidget(self.lbl_cfg)
-        b_save = QPushButton("Save")
-        b_save.setToolTip("Save the panel settings. This does not save edits on the layers.")
-        b_save.clicked.connect(self.save_config)
-        header_lay.addWidget(b_save)
         header_scroll = FittingScroll(compact=True)
         header_scroll.setWidget(header)
         lay.addWidget(header_scroll)
 
-        self.tabs = QTabWidget()
-        self.tabs.setUsesScrollButtons(True)
-        self.tabs.tabBar().setUsesScrollButtons(True)
         self.mapping = MappingTab()
         self.ranging = RangingTab()
         self.edit = EditTab()
         self.validation = ValidationTab()
         self.streets = StreetsTab(self)
         self.addresses = AddressesTab(self)
+        self.lookups = LookupPage(self)
         self.ranging.manual_slot.addWidget(self.edit.manual_group)
+        self.schema_page = self._project_page()
         self.settings = SettingsTab((
-            ("Project", self._project_page(),
-             "Create the schema, import data, and track changes"),
             ("Fields", self.mapping, "Match NENA fields to the centerline"),
             ("Sides", host_groups(self.mapping.side_group),
              "ZIP, MSAG, and ESN on each side of the road"),
@@ -115,31 +112,24 @@ class NenaDock(QDockWidget):
             ("Editing", host_groups(self.edit.auto_group, self.edit.nguid_group),
              "What happens while you edit, and NGUID"),
         ))
-        for widget, icon_name, title, tip in (
-                (self.streets, "streets.svg", "Streets",
-                 "Master names, and the roads and addresses that use them"),
-                (self.addresses, "address.svg", "Addresses",
-                 "Place an address, draw a driveway, or place units that share one access"),
-                (self.ranging, "range.svg", "Ranges",
-                 "Give roads address ranges and split them"),
-                (self.validation, "validate.svg", "Check",
-                 "Gaps, overlaps, and the MSAG comparison"),
-                (self.settings, "icon.svg", "Settings",
-                 "Layers, fields, sides, defaults, and rules"),
-        ):
-            index = self.tabs.addTab(widget, icon(icon_name), title)
-            self.tabs.setTabToolTip(index, tip)
         self.addresses.toolRequested.connect(lambda *_: self.addressToolRequested.emit())
         self.addresses.drivewayToolRequested.connect(lambda *_: self.drivewayToolRequested.emit())
         self.addresses.unitsToolRequested.connect(lambda *_: self.unitsToolRequested.emit())
         self.addresses.configSaved.connect(lambda *_: self.projectConfigSaved.emit())
-        lay.addWidget(self.tabs, 1)
-
-        self.progress = QProgressBar()
-        self.progress.setRange(0, 100)
-        self.progress.setVisible(False)
-        lay.addWidget(self.progress)
-        self.setWidget(root)
+        self._progress_bars = []
+        self._layer_mirrors = []
+        self._layer_sync = False
+        self.progress = self.make_progress()
+        settings_wrap = Surface()
+        settings_lay = QVBoxLayout(settings_wrap)
+        settings_lay.setContentsMargins(0, 0, 0, 0)
+        settings_lay.addWidget(header_scroll)
+        settings_lay.addWidget(self.settings, 1)
+        settings_lay.addWidget(self.progress)
+        self.settings_root = settings_wrap
+        self.open_page = lambda *_args: None
+        # The pages live in their own windows. This dock keeps the objects and the save order.
+        self.setWidget(QWidget(self))
 
         # wiring
         self.mapping.autoMapRequested.connect(self.auto_map)
@@ -181,11 +171,11 @@ class NenaDock(QDockWidget):
         lay = page_into(page)
         group = QGroupBox("Schema and versions")
         box = QVBoxLayout(group)
-        box.addWidget(hint("Create the four NENA tables, copy existing data in, "
-                           "and keep a version of each save."))
+        box.addWidget(hint("Create the NENA tables, the access-point table, and the lookup lists. "
+                           "Copy existing data in, and keep a version of each save."))
         b_schema = QPushButton("Create schema…")
-        b_schema.setToolTip("Create empty NENA road, street, address, and driveway tables in a GeoPackage, "
-                            "File Geodatabase, or database connection.")
+        b_schema.setToolTip("Create empty NENA road, street, address, driveway, and access-point tables, "
+                            "plus the lookup lists, in a GeoPackage, File Geodatabase, or database connection.")
         b_schema.clicked.connect(self.create_schema)
         b_import = QPushButton("Import…")
         b_import.setToolTip("Copy existing roads, street names, addresses, and driveways into the schema layers.")
@@ -242,7 +232,8 @@ class NenaDock(QDockWidget):
             n = self.mapping.apply_auto_map() if self.layer else 0
             self.mapping.store(self.cfg)
             self.lbl_cfg.setText(f"<i>No stored configuration – {n} field(s) auto-mapped. "
-                                 "Review them under Settings, Fields, then click Save.</i>" if self.layer else "")
+                                 "Review them under Settings, Fields. Changes save automatically.</i>"
+                                 if self.layer else "")
         self._load_tabs()
 
     def _load_tabs(self):
@@ -250,6 +241,8 @@ class NenaDock(QDockWidget):
             self.streets.refresh_list()
         if hasattr(self, "addresses"):
             self.addresses.load()
+        if hasattr(self, "lookups"):
+            self.lookups.load()
         self.mapping.load(self.cfg)
         self.ranging.load(self.cfg)
         self.edit.load(self.cfg)
@@ -283,12 +276,70 @@ class NenaDock(QDockWidget):
                 self.lbl_cfg.setText("<i>Configuration stored on layer.</i>")
             self.addresses.store()
             self.validation.write_msag()
+            if hasattr(self, "lookups"):
+                self.lookups.store()
             if self.layer is not None:
                 self._msg("Settings saved.", "Success")
             else:
                 self._msg("Project settings saved. Choose a centerline layer to store field mapping on it.",
                           "Success")
         self._guard(do)
+
+    # ------------------------------------------------------------------ auto-save
+    def watch_for_changes(self, root, exclude=()):
+        """Save the settings shortly after you change anything under ``root``.
+
+        Only signals that come from you are used (a click, a pick from a list,
+        leaving a text box), so loading a layer never writes settings by itself.
+        """
+        from qgis.PyQt.QtWidgets import QAbstractSpinBox, QComboBox, QLineEdit, QRadioButton
+        skip = [w for w in exclude if w is not None]
+
+        def excluded(widget):
+            return any(widget is w or w.isAncestorOf(widget) for w in skip)
+
+        for widget in root.findChildren(QWidget):
+            if excluded(widget) or widget.property("nenaAutosave") is not None:
+                continue
+            if isinstance(widget, (QCheckBox, QRadioButton)):
+                widget.clicked.connect(self.autosave)
+            elif isinstance(widget, QComboBox):
+                widget.activated.connect(self.autosave)
+            elif isinstance(widget, QAbstractSpinBox):
+                widget.editingFinished.connect(self.autosave)
+            elif isinstance(widget, QLineEdit) and not isinstance(widget.parent(), (QComboBox, QAbstractSpinBox)):
+                widget.editingFinished.connect(self.autosave)
+            else:
+                continue
+            widget.setProperty("nenaAutosave", True)
+
+    def autosave(self, *_args):
+        """Save a moment later, so several quick changes make one save."""
+        timer = getattr(self, "_autosave_timer", None)
+        if timer is None:
+            from qgis.PyQt.QtCore import QTimer
+            timer = QTimer(self)
+            timer.setSingleShot(True)
+            timer.setInterval(600)
+            timer.timeout.connect(self._autosave_now)
+            self._autosave_timer = timer
+        timer.start()
+
+    def _autosave_now(self):
+        try:
+            self.streets.store()
+            if self.layer is not None:
+                self._persist()
+                self.lbl_cfg.setText("<i>Settings are saved automatically.</i>")
+            self.addresses.store()
+            self.validation.write_msag()
+            self.projectConfigSaved.emit()
+        except ConfigError as exc:
+            self._msg(str(exc), "Warning")
+        except Exception:  # noqa: BLE001 - never interrupt typing with a crash
+            import traceback
+            from qgis.core import QgsMessageLog
+            QgsMessageLog.logMessage(traceback.format_exc(), TITLE, msg_level("Warning"))
 
     def save_config_quiet(self):
         if self.layer is not None and C.has_config(self.layer):
@@ -328,7 +379,8 @@ class NenaDock(QDockWidget):
             self.cfg = C.load_from_file(path)
             self._remember_dir(path)
             self._load_tabs()
-            self._msg("Configuration imported. Click Save to keep it.", "Success")
+            self.autosave()
+            self._msg("Configuration imported and saved.", "Success")
         self._guard(do)
 
     def export_json(self):
@@ -528,11 +580,21 @@ class NenaDock(QDockWidget):
             remember(pcfg.addresses, "driveway", created["driveway"])
             from ..core.schema_pack import driveway_defs
             pcfg.addresses.driveway_mapping = {d.name: d.physical_name for d in driveway_defs()}
+        if created.get("access") is not None:
+            remember(pcfg.addresses, "access", created["access"])
+        from ..core.lookups import LOOKUP_SPECS, apply_value_relations, seed_layer
+        for key, _table, _title, role in LOOKUP_SPECS:
+            lyr = created.get(key)
+            if lyr is None:
+                continue
+            remember(pcfg.lookups, role, lyr)
+            seed_layer(lyr, key)
         archive_roles = (
             ("centerline", "centerline_archive"),
             ("streets", "streets_archive"),
             ("address", "address_archive"),
             ("driveway", "driveway_archive"),
+            ("access", "access_archive"),
         )
         made_archive = False
         for role, key in archive_roles:
@@ -544,6 +606,10 @@ class NenaDock(QDockWidget):
         if made_archive:
             pcfg.archive.enabled = bool(watch)
         save_project_config(pcfg)
+        try:
+            apply_value_relations(pcfg)
+        except Exception:  # noqa: BLE001 - the tables exist even if a drop-down cannot be wired yet
+            pass
 
         label = os.path.splitext(os.path.basename(target.path))[0] if target.path else (
             target.schema or target.connection or "schema")
@@ -555,7 +621,8 @@ class NenaDock(QDockWidget):
         try:
             # Archive layers first, then streets, so centerlines are added last and sit on top.
             order = [key for _role, key in archive_roles]
-            order += ["streets", "driveway", "address", "centerline"]
+            order += [key for key, _table, _title, _role in LOOKUP_SPECS]
+            order += ["streets", "driveway", "access", "address", "centerline"]
             for key in order:
                 lyr = created.get(key)
                 if lyr is None:
@@ -566,8 +633,14 @@ class NenaDock(QDockWidget):
             self.iface.currentLayerChanged.connect(self._follow_active_layer)
         self.streets.load()
         self.addresses.load()
+        self.lookups.load()
         if created.get("centerline") is not None:
             self.cb_layer.setLayer(created["centerline"])
+        # New layers get the NENA look straight away.
+        fresh = {key: created.get(key) for key in ("centerline", "address", "driveway", "access")
+                 if created.get(key) is not None}
+        if fresh:
+            self.style_layers(only=fresh, ask=False)
         self.sync_archive_option()
         self.projectConfigSaved.emit()
 
@@ -684,6 +757,120 @@ class NenaDock(QDockWidget):
                                 "scope": C.SCOPE_CHAIN, "overwrite_existing": True},
                          command="NENA: redistribute ranges")
 
+    def reverse_selected(self):
+        """Reverse the selected centerlines. Sides, ranges, and linked address sides follow."""
+        def do():
+            from ..core.addressing.ssap import ACCESS_FIELDS
+            from ..core.direction import reverse_centerlines
+            from ..core import lookups as L
+            layer = self._require_layer()
+            fids = list(layer.selectedFeatureIds())
+            if not fids:
+                raise ConfigError(f"Select the centerlines to reverse on '{layer.name()}' first. "
+                                  "The green dot is where a line starts and the red square is where it ends.")
+            pcfg = load_project_config()
+            linked = []
+            maps = L.field_maps(pcfg, L.feature_layers(pcfg, layer))
+            addr = layer_for(pcfg.streets, "address")
+            am = maps.get("address", {})
+            if addr is not None and am.get("Addr_Side") and am.get("RCL_NGUID"):
+                linked.append((addr, am["Addr_Side"], am["RCL_NGUID"]))
+            access = layer_for(pcfg.addresses, "access")
+            if access is not None:
+                xm = L.resolve_fields([f.name() for f in access.fields()], ACCESS_FIELDS, {})
+                if xm.get("RoadSide") and xm.get("RCL_NGUID"):
+                    linked.append((access, xm["RoadSide"], xm["RCL_NGUID"]))
+            box = QMessageBox(self)
+            box.setWindowTitle("Reverse direction")
+            box.setIcon(QMessageBox.Icon.Question)
+            box.setText(f"Reverse {len(fids)} centerline(s) on '{layer.name()}'?")
+            rs = self.collect().ranging
+            odd_even = {"O": "odd", "E": "even", "B": "both", "Z": "none"}
+            box.setInformativeText(
+                "The line will start at the other end, and left and right follow the new direction. "
+                "Left/right values (ESN, ZIP, community) swap so they stay on the same side of the road, "
+                "and address points and access points on these roads switch side to match.\n\n"
+                "Reverse and re-range (usual): give the roads new ranges in the new direction, with "
+                f"{odd_even.get(rs.left_parity, rs.left_parity)} numbers on the left and "
+                f"{odd_even.get(rs.right_parity, rs.right_parity)} on the right.\n\n"
+                "Reverse only: keep the existing numbers. Each side's From/To and parity move with it, "
+                "so they now read the other way.")
+            rerange = box.addButton("Reverse and re-range", QMessageBox.ButtonRole.AcceptRole)
+            only = box.addButton("Reverse only", QMessageBox.ButtonRole.AcceptRole)
+            box.addButton(QMessageBox.StandardButton.Cancel)
+            box.setDefaultButton(rerange)
+            box.exec()
+            clicked = box.clickedButton()
+            if clicked not in (only, rerange):
+                return
+            self._persist()
+            defaults = {"L": rs.left_parity, "R": rs.right_parity} if clicked is rerange else None
+            result = reverse_centerlines(layer, self.collect(), fids, linked, parity_defaults=defaults)
+            text = f"Reversed {result['lines']} centerline(s)."
+            if result["linked"]:
+                text += f" {result['linked']} address/access point side(s) switched to match."
+            self._msg(text + " Undo puts them back. Save the layers to keep it.", "Success")
+            if clicked is rerange:
+                self.run_ranging(True)
+        self._guard(do)
+
+    def set_one_way_selected(self, value):
+        """Mark the selected centerlines two-way, one-way FT or TF, or clear it. Used for routing."""
+        def do():
+            from ..core.direction import set_one_way
+            layer = self._require_layer()
+            fids = list(layer.selectedFeatureIds())
+            if not fids:
+                raise ConfigError(f"Select the centerlines on '{layer.name()}' to mark first.")
+            self._persist()
+            try:
+                n = set_one_way(layer, self.collect(), fids, value)
+            except ConfigError as exc:
+                if str(exc) != "NO_ONEWAY_FIELD":
+                    raise
+                if QMessageBox.question(self, TITLE, f"'{layer.name()}' has no OneWay field matched. "
+                                        "Add the NENA OneWay field now?") != QMessageBox.StandardButton.Yes:
+                    return
+                add_missing_fields(layer, self.collect(), ["OneWay"])
+                self._persist()
+                n = set_one_way(layer, self.collect(), fids, value)
+            label = {"B": "two-way (B)", "FT": "one-way From → To (FT)", "TF": "one-way To → From (TF)"}
+            self._msg(f"{n} centerline(s) marked {label.get(value, 'with no one-way value')}. "
+                      "Red arrows show the direction of travel once the layer has the NENA style. "
+                      "Save the layer to keep it.", "Success")
+            layer.triggerRepaint()
+        self._guard(do)
+
+    def style_layers(self, only=None, ask=True):
+        """Give the NENA layers road / address-point styles with direction arrows and labels."""
+        def do():
+            from ..core import styles as S
+            pcfg = load_project_config()
+            layers = only if only is not None else S.nena_layers(pcfg, self.layer)
+            names = [lyr.name() for lyr in layers.values() if lyr is not None]
+            if not names:
+                raise ConfigError("Choose the centerline layer (and the address layer on the Addresses window) "
+                                  "first, so the plugin knows which layers to style.")
+            if ask and QMessageBox.question(
+                    self, TITLE,
+                    "Apply the NENA map style to these layers?\n\n" + "\n".join(names)
+                    + "\n\nRoads get a road look with arrows showing their direction, a green dot where each "
+                      "line starts and a red square where it ends. Address points become houses with their "
+                      "number.\n\nYour current style is kept. Switch back any time: right-click the layer → "
+                      "Styles.") != QMessageBox.StandardButton.Yes:
+                return
+            done = S.apply_styles(pcfg, self.layer, layers)
+            try:
+                view = self.iface.layerTreeView()
+                for lyr in layers.values():
+                    if lyr is not None:
+                        view.refreshLayerSymbology(lyr.id())
+            except Exception:  # noqa: BLE001 - the legend refreshes on its own later
+                pass
+            if ask:
+                self._msg(f"Styled {len(done)} layer(s): " + ", ".join(done) + ".", "Success")
+        self._guard(do)
+
     # ------------------------------------------------------------------ edit tools
     def apply_policies(self):
         def do():
@@ -714,7 +901,7 @@ class NenaDock(QDockWidget):
             issues = self._with_progress(lambda cb: v.run(selected_only, cb))
             if issues is not None:
                 self.validation.set_issues(issues)
-                self.tabs.setCurrentWidget(self.validation)
+                self.open_page(self.validation)
                 if self.cfg.validation.select_overlaps and self.cfg.validation.check_overlaps:
                     fids = V.overlap_fids(issues)
                     if fids:
@@ -732,7 +919,7 @@ class NenaDock(QDockWidget):
             if issues is None:
                 return
             self.validation.set_issues(issues)
-            self.tabs.setCurrentWidget(self.validation)
+            self.open_page(self.validation)
             fids = V.overlap_fids(issues)
             layer.selectByIds(fids)
             if fids:
@@ -851,17 +1038,79 @@ class NenaDock(QDockWidget):
         self._guard(do)
 
     # ------------------------------------------------------------------ helpers
+    def make_progress(self):
+        bar = QProgressBar()
+        bar.setRange(0, 100)
+        bar.setVisible(False)
+        self._progress_bars.append(bar)
+        return bar
+
+    def make_layer_row(self):
+        """A centerline picker synced with the one on Settings, plus Save."""
+        row = QWidget()
+        lay = QHBoxLayout(row)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.addWidget(QLabel("Centerline"))
+        combo = QgsMapLayerComboBox()
+        combo.setFilters(line_layer_filter())
+        combo.setAllowEmptyLayer(True)
+        if self.cb_layer.currentLayer() is not None:
+            combo.setLayer(self.cb_layer.currentLayer())
+        combo.layerChanged.connect(lambda lyr, source=combo: self._mirror_from(source, lyr))
+        self.cb_layer.layerChanged.connect(lambda lyr, target=combo: self._mirror_to(target, lyr))
+        self._layer_mirrors.append(combo)
+        lay.addWidget(combo, 1)
+        return row
+
+    def _mirror_from(self, source, layer):
+        if self._layer_sync:
+            return
+        self._layer_sync = True
+        try:
+            if self.cb_layer.currentLayer() != layer:
+                self.cb_layer.setLayer(layer)
+            for combo in self._layer_mirrors:
+                if combo is not source and combo.currentLayer() != layer:
+                    combo.setLayer(layer)
+        finally:
+            self._layer_sync = False
+
+    def _mirror_to(self, combo, layer):
+        if self._layer_sync:
+            return
+        self._layer_sync = True
+        try:
+            if combo.currentLayer() != layer:
+                combo.setLayer(layer)
+        finally:
+            self._layer_sync = False
+
+    def wrap_page(self, page, with_layer_row):
+        wrap = Surface()
+        lay = QVBoxLayout(wrap)
+        lay.setContentsMargins(4, 4, 4, 4)
+        if with_layer_row:
+            lay.addWidget(self.make_layer_row())
+        lay.addWidget(page, 1)
+        lay.addWidget(self.make_progress())
+        return wrap
+
     def _with_progress(self, func):
-        self.progress.setValue(0)
-        self.progress.setVisible(True)
+        bars = list(self._progress_bars) or [self.progress]
+        for bar in bars:
+            bar.setValue(0)
+            bar.setVisible(True)
 
         def cb(pct):
-            self.progress.setValue(max(0, min(100, int(pct))))
+            value = max(0, min(100, int(pct)))
+            for bar in bars:
+                bar.setValue(value)
             QCoreApplication.processEvents()
         try:
             return func(cb)
         finally:
-            self.progress.setVisible(False)
+            for bar in bars:
+                bar.setVisible(False)
 
     def _guard(self, func):
         try:

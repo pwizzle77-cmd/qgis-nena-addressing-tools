@@ -57,7 +57,7 @@ class AddressesTab(QWidget):
         row = QHBoxLayout()
         for text, slot, tip in (
                 ("Place address", lambda: self.toolRequested.emit(),
-                 "Click the road or a driveway for access, then the rooftop. Hold Shift to draw a straight driveway."),
+                 "Click the road, then the building. An access point is saved 10 feet off the road."),
                 ("Draw driveway", lambda: self.drivewayToolRequested.emit(),
                  "Click the access point, then each bend. Right-click or double-click to finish."),
                 ("Place units", lambda: self.unitsToolRequested.emit(),
@@ -68,7 +68,7 @@ class AddressesTab(QWidget):
             row.addWidget(b)
         lay.addLayout(row)
         row = QHBoxLayout()
-        for text, slot, tip in (("Undo last", self.undo, "Remove the last address and its driveway, if one was drawn"),
+        for text, slot, tip in (("Undo last", self.undo, "Remove the last address and the access point made with it"),
                                 ("Check", self.check, "Range, side, order, duplicates, boundaries")):
             b = QPushButton(text)
             b.setToolTip(tip)
@@ -87,6 +87,10 @@ class AddressesTab(QWidget):
         self.cb_dw.setFilters(_LINE)
         self.cb_dw.setAllowEmptyLayer(True)
         f.addRow("Driveways", self._with_create(self.cb_dw, "driveway"))
+        self.cb_access = QgsMapLayerComboBox()
+        self.cb_access.setFilters(point_layer_filter())
+        self.cb_access.setAllowEmptyLayer(True)
+        f.addRow("Access points", self.cb_access)
         row = QHBoxLayout()
         self.lbl_tpl = QLabel()
         row.addWidget(self.lbl_tpl, 1)
@@ -139,7 +143,7 @@ class AddressesTab(QWidget):
         row.addWidget(QLabel("Right"))
         row.addWidget(self.cb_right)
         f.addRow("Parity", row)
-        self.chk_segpar = QCheckBox("A segment's own Parity_L/R wins")
+        self.chk_segpar = QCheckBox("Use a segment's own Parity_L/R instead (off: the parity above always wins)")
         self.chk_order = QCheckBox("Keep numbers increasing between neighbouring addresses")
         self.cb_coll = combo([("Use the next free number", "next"), ("Add a suffix (101A)", "suffix"),
                               ("Ask each time", "ask")])
@@ -174,11 +178,7 @@ class AddressesTab(QWidget):
         f = QFormLayout(g)
         self.cb_place = combo([(p, p) for p in PLACEMENT_VALUES])
         f.addRow("Placement", self.cb_place)
-        self.chk_dw = QCheckBox("Straight driveway with Place address")
-        self.chk_dw.setToolTip("Off for a new project. Hold Shift on the rooftop click, or tick the box in the "
-                               "confirm dialog, to draw one line from the access point to that rooftop.")
         self.chk_overlay = QCheckBox("Show where selected addresses were addressed on the road")
-        f.addRow(self.chk_dw)
         f.addRow(self.chk_overlay)
         lay.addWidget(g)
 
@@ -261,6 +261,7 @@ class AddressesTab(QWidget):
         s, a = self.pcfg.streets, self.pcfg.addresses
         self.cb_addr.setLayer(layer_for(s, "address"))
         self.cb_dw.setLayer(layer_for(a, "driveway"))
+        self.cb_access.setLayer(layer_for(a, "access"))
         self._show_template()
         set_combo_data(self.cb_method, a.method)
         self.sp_dist.setValue(a.distance_per_number)
@@ -271,7 +272,7 @@ class AddressesTab(QWidget):
         set_combo_data(self.cb_round, a.rounding)
         set_combo_data(self.cb_left, a.left_parity)
         set_combo_data(self.cb_right, a.right_parity)
-        self.chk_segpar.setChecked(a.use_segment_parity)
+        self.chk_segpar.setChecked(a.segment_parity_wins)
         self.chk_order.setChecked(a.order_check)
         set_combo_data(self.cb_coll, a.collision)
         set_combo_data(self.cb_okey, a.override_field)
@@ -279,7 +280,6 @@ class AddressesTab(QWidget):
         for comm, o in sorted(a.overrides.items()):
             self._add_override(dict(o, community=comm))
         set_combo_data(self.cb_place, a.placement)
-        self.chk_dw.setChecked(a.create_driveway)
         self.chk_overlay.setChecked(a.overlay)
         self.dock.mapping.load_rules(a.attribution_rules)
         self._vis()
@@ -294,6 +294,7 @@ class AddressesTab(QWidget):
         s, a = self.pcfg.streets, self.pcfg.addresses
         remember(s, "address", self.cb_addr.currentLayer())
         remember(a, "driveway", self.cb_dw.currentLayer())
+        remember(a, "access", self.cb_access.currentLayer())
         if self.dock.layer is not None:
             remember(s, "centerline", self.dock.layer)
         a.method = self.cb_method.currentData()
@@ -305,7 +306,7 @@ class AddressesTab(QWidget):
         a.rounding = self.cb_round.currentData()
         a.left_parity = self.cb_left.currentData()
         a.right_parity = self.cb_right.currentData()
-        a.use_segment_parity = self.chk_segpar.isChecked()
+        a.segment_parity_wins = self.chk_segpar.isChecked()
         a.order_check = self.chk_order.isChecked()
         a.collision = self.cb_coll.currentData()
         a.override_field = self.cb_okey.currentData()
@@ -325,7 +326,7 @@ class AddressesTab(QWidget):
                         pass
             a.overrides[comm] = {k: v for k, v in o.items() if v not in ("", None)}
         a.placement = self.cb_place.currentData()
-        a.create_driveway = self.chk_dw.isChecked()
+        a.create_driveway = False
         a.overlay = self.chk_overlay.isChecked()
         self.dock.mapping.store_rules(a)
         save_project_config(self.pcfg)

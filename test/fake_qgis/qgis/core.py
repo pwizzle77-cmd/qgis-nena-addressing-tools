@@ -345,10 +345,11 @@ class QgsField:
         return self._n
 
     def typeName(self):
-        return {"int": "integer", "string": "String", "datetime": "DateTime", "double": "double"}.get(self._t, "String")
+        return {"int": "integer", "string": "String", "datetime": "DateTime",
+                "double": "double", "float": "float"}.get(self._t, "String")
 
     def isNumeric(self):
-        return self._t in ("int", "double")
+        return self._t in ("int", "double", "float")
 
     def setLength(self, n):
         self._len = n

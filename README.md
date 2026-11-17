@@ -1,429 +1,641 @@
-# NENA Addressing Tools
+# NENA Addressing Tools for QGIS
 
-A QGIS plugin for day-to-day 911 addressing.
+**A QGIS plugin that handles the day-to-day work of 911 addressing.**
 
-You keep one list of street names, give each road an address range, and click the map to place an address. The same panel can start a new set of tables, bring in data you already have, and check the result before you send it on.
+Keep one clean list of street names, give your road centerlines their address ranges, and place new addresses by clicking on the map. The plugin also checks your data before you send it to your 911 authority or state.
 
-It follows the usual NENA layout for road centerlines and address points. Your data can live in a GeoPackage, a file geodatabase, a shapefile, or a database you have already connected in QGIS.
+It follows the NENA NG9-1-1 layout for road centerlines and site/structure address points. Your data can be in a GeoPackage, a file geodatabase, a shapefile, or any database you've connected in QGIS (PostgreSQL, SQL Server, and others).
 
-You need QGIS 3.34 or newer, including QGIS 4. There is nothing else to install.
+| | |
+|---|---|
+| **Works with** | QGIS 3.34 or newer, including QGIS 4 |
+| **Extra software** | None |
+| **Version** | 3.6.3 |
+| **License** | [GPL-2.0-or-later](LICENSE) |
+| **Source** | https://github.com/pwizzle77-cmd/qgis-nena-addressing-tools |
 
-License: [GPL-2.0-or-later](LICENSE).
-Source: https://github.com/pwizzle77-cmd/qgis-nena-addressing-tools
+> The plugin used to be called *NENA RCL Tools*. QGIS still loads it from a folder named `nena_rcl_tools`, so if you're upgrading, your settings carry over.
 
-This guide matches version 3.2.10. The plugin was formerly called NENA RCL Tools. QGIS still loads it from a folder named `nena_rcl_tools`, so an existing install keeps its settings.
+---
+
+## Contents
+
+- [What can it do?](#what-can-it-do)
+- [Install](#install)
+- [Get started in 10 minutes](#get-started-in-10-minutes)
+- [The toolbar and windows](#the-toolbar-and-windows)
+- [Map styles and line direction](#map-styles-and-line-direction)
+- [Drop-down lists (lookup tables)](#drop-down-lists-lookup-tables)
+- [Street names](#street-names)
+- [Placing addresses](#placing-addresses)
+- [Address ranges on roads](#address-ranges-on-roads)
+- [When you edit a road](#when-you-edit-a-road)
+- [Checking your data](#checking-your-data)
+- [Settings](#settings)
+- [New tables, importing, and edit history](#new-tables-importing-and-edit-history)
+- [Good to know](#good-to-know)
+- [Words used in this guide](#words-used-in-this-guide)
+- [What's new](#whats-new)
+- [For developers](#for-developers)
+
+---
+
+## What can it do?
+
+| You want to… | The plugin… |
+|---|---|
+| Stop misspelled and duplicate street names | Keeps one master street-name list. Rename a street once and every road and address using it updates. |
+| Range your centerlines | Assigns From/To numbers by hundred-block, distance, length, or from existing address points. |
+| Add new addresses quickly | You click the road, then the building. The house number, side, ZIP, ESN, and community fill in for you. |
+| Number apartments and townhomes | Places many units under one house number: 1, 2, 3 or 101, 102 or A, B, C. |
+| Keep attribute values consistent | Gives fields drop-down lists, so everyone picks *Main Street*, not *Main St.* or *MAIN*. |
+| Split roads without breaking ranges | Divides the range across the pieces automatically when you split. |
+| See which way a road runs | Styles roads with direction arrows, a green dot where each line starts, and a red square where it ends. |
+| Fix a road drawn backwards | **Reverse** flips the line and swaps its left/right values and ranges to match. |
+| Catch problems before submitting | Finds overlapping ranges, gaps, wrong odd/even sides, missing values, and MSAG mismatches. |
+| Start fresh or move old data in | Creates empty NENA tables and imports your existing layers into them. |
+
+---
 
 ## Install
 
-1. Copy this folder and name the copy `nena_rcl_tools`. The folder must contain `metadata.txt`.
-2. Put that copy in your QGIS plugins folder.
+1. Copy the plugin folder and name the copy **`nena_rcl_tools`**. The folder must contain `metadata.txt`.
+2. Put the copy in your QGIS plugins folder:
 
 | QGIS | Windows | macOS | Linux |
 |---|---|---|---|
 | 4 | `%APPDATA%\QGIS\QGIS4\profiles\default\python\plugins\nena_rcl_tools` | `~/Library/Application Support/QGIS/QGIS4/profiles/default/python/plugins/nena_rcl_tools` | `~/.local/share/QGIS/QGIS4/profiles/default/python/plugins/nena_rcl_tools` |
-| 3.34 or newer | `%APPDATA%\QGIS\QGIS3\profiles\default\python\plugins\nena_rcl_tools` | `~/Library/Application Support/QGIS/QGIS3/profiles/default/python/plugins/nena_rcl_tools` | `~/.local/share/QGIS/QGIS3/profiles/default/python/plugins/nena_rcl_tools` |
+| 3.34+ | `%APPDATA%\QGIS\QGIS3\profiles\default\python\plugins\nena_rcl_tools` | `~/Library/Application Support/QGIS/QGIS3/profiles/default/python/plugins/nena_rcl_tools` | `~/.local/share/QGIS/QGIS3/profiles/default/python/plugins/nena_rcl_tools` |
 
-3. Restart QGIS, or use Plugin Reloader.
-4. In **Plugins → Manage and Install Plugins → Installed**, turn on **NENA Addressing Tools**.
+3. Restart QGIS.
+4. Go to **Plugins → Manage and Install Plugins → Installed** and tick **NENA Addressing Tools**.
 
-To install from a zip, the zip must contain `nena_rcl_tools/metadata.txt` at the top. Use **Plugins → Manage and Install Plugins → Install from ZIP**.
+**Installing from a zip?** The zip must have `nena_rcl_tools/metadata.txt` at the top. Use **Plugins → Manage and Install Plugins → Install from ZIP**.
 
-You then get a **NENA Addressing Tools** toolbar and a **Vector → NENA Addressing Tools** menu.
+When it's on, you'll see the **NENA Addressing Tools** toolbar and a **Vector → NENA Addressing Tools** menu.
+
+---
+
+## Get started in 10 minutes
+
+This is the usual order for a county that already has road centerlines.
+
+1. **Add your roads to the map.**
+   Each road line should point the way the house numbers go up. Roads should be split where they meet (the plugin can do this for you later).
+
+2. **Style the layers.** Click **NENA ▾ → Style NENA layers**.
+   Roads now look like roads, with arrows showing which way each one runs. Look for roads whose arrows point the wrong way, select them, and click **Reverse**.
+
+3. **Match your fields.** Open **NENA ▾ → Settings → Fields**.
+   The plugin matches your columns to NENA names on its own, including older names like `L_F_ADD` and `STREETNAME`. Check the list, and fix anything it missed.
+
+4. **Set up the drop-down lists.** Open **NENA ▾ → Lookup tables**.
+   Click **Create missing tables**, then **Load values from my data**. Your attribute forms now have drop-downs for street type, county, ZIP, ESN, community, and more.
+
+5. **Build your street-name list.** Open **NENA ▾ → Streets**.
+   Pick or create a master street-name table, then click **Build from roads**. Choose one spelling for each street.
+
+6. **Range the roads.** Open **NENA ▾ → Ranges**.
+   Pick a method on the **Method** page. Try it on a few selected roads first, check the result, then range the rest.
+
+7. **Place an address.** Click **Address** on the toolbar.
+   Click the road, then click the building. An access point is saved 10 feet off the road.
+
+8. **Check before you submit.** Click **Validate** on the toolbar.
+   Overlapping ranges are selected for you so you can fix them first.
+
+> 💡 **Your settings save automatically.** Your layer edits don't. Save your layers in QGIS when you want to keep the edits. Until then, everything the plugin did can be undone.
+
+---
+
+## The toolbar and windows
+
+### Toolbar
+
+Every button has its name under the icon.
 
 | Button | What it does |
 |---|---|
-| 911 badge | Open or hide the panel |
-| Street sign | Open the Streets tab |
-| House and road | Place an address |
-| Orange path | Draw a driveway |
-| Three houses | Place several units that share one access |
-| House with an undo arrow | Undo the last address |
-| 101 → 199 | Give the selected roads an address range |
-| Arc arrow | Spread one combined range across the selected pieces |
-| Red split mark | Split a road and divide its range in one click |
-| Scissors | Turn automatic re-ranging after a split or merge on or off |
-| Shield | Check the whole layer |
-| Overlapping bars | Select every road whose range overlaps another |
+| **NENA ▾** | Opens a window (Streets, Addresses, Ranges, Check, Lookup tables, Schema and import, Settings), or **Style NENA layers** |
+| **Split** | Click a road to split it and divide its range between the two pieces |
+| **Auto re-range** | Turns automatic re-ranging on or off after you split or merge roads |
+| **Range** | Gives the selected roads an address range |
+| **Redistribute** | Spreads one combined range across the selected pieces |
+| **Reverse** | Flips the direction of the selected roads. Left/right values and ranges follow |
+| **One-way ▾** | Marks the selected roads two-way (B), one-way From → To (FT), or one-way To → From (TF) for routing |
+| **Validate** | Checks the whole centerline layer |
+| **Overlaps** | Selects every road whose range overlaps another |
+| **Address** | Places an address and an access point 10 feet off the road |
+| **Driveway** | Draws a driveway from the road |
+| **Units** | Places several units that share one house number |
+| **Undo** | Removes the last address you placed |
 
-**Save** at the top of the panel stores these settings. It does not save edits on the layers. Save the layers with QGIS when you want the edits kept. Every edit the plugin makes can be undone until you save the layer.
+### Windows
 
-## The panel
-
-| Tab | Use it to |
+| Window | Use it to |
 |---|---|
-| **Streets** | Keep the master list of road names, and see which roads and addresses use each name |
-| **Addresses** | Place an address, draw a driveway, or number several units from one access |
-| **Ranges** | Give roads their From–To numbers, close gaps, and split them |
-| **Check** | Look for gaps, overlaps, and differences from an MSAG |
-| **Settings** | Choose layers, match fields, and set the rules |
+| **Streets** | Manage the master street-name list, and see which roads and addresses use each name |
+| **Addresses** | Choose your address, driveway, and access-point layers |
+| **Ranges** | Assign From/To numbers, fill gaps, and split roads |
+| **Check** | Find gaps, overlaps, and MSAG differences |
+| **Lookup tables** | Manage the drop-down lists |
+| **Schema and import** | Create new NENA tables, import old data, and track edit history |
+| **Settings** | Match fields and set the rules (things you set once) |
 
-**Ranges** has two inner pages: **Run** does the work, **Method** chooses how the numbers are assigned. **Check** opens on **Results**. The other Check pages are **Checks** (what to look for) and **MSAG**.
+Windows remember their size and position.
 
-Settings is split so each job has its own page:
+**Rather keep them docked?** Tick **NENA ▾ → Dock the NENA windows in the side panel**. They'll open as tabs next to the Browser/Catalog instead of as separate windows.
 
-| Page | What you set |
+**Choosing the centerline layer:** each window has a **Centerline** picker at the top. The windows also follow whichever line layer is active in the Layers panel.
+
+---
+
+## Map styles and line direction
+
+### Style your layers
+
+Click **NENA ▾ → Style NENA layers**. New tables made with **Create schema** are styled for you.
+
+| Layer | How it looks |
 |---|---|
-| **Project** | Create a new set of tables, import existing data, and keep a history of saves |
-| **Fields** | Match your road layer's columns to the NENA names |
-| **Sides** | Which polygon layers supply ZIP, community, and ESN |
-| **Defaults** | State, county, one-way, and other values that rarely change |
-| **Street rules** | When two names count as the same name, and what a rename does |
-| **Address rules** | How a new address gets its number |
-| **Editing** | What happens when you split, merge, or add a road |
+| **Road centerlines** | Grey-edged white roads. Blue **arrows** show the direction the line was drawn; on one-way roads, large **red arrows** show the direction of travel instead. A **green dot** marks the first point (From) and a **red square** the last point (To). Zoomed in, the street name runs along the road and the From/To numbers for each side appear at each end |
+| **Address points** | Small orange houses, labelled with the house number, suffix, and unit when you zoom in |
+| **Driveways** | Brown dashed lines |
+| **Access points** | Small blue diamonds |
 
-Pick the road-centerline layer at the top of the panel. The panel also follows the line layer you have active in the Layers panel.
+**Your old style isn't lost.** The plugin adds a style called **NENA** to each layer. To switch back, right-click the layer in the Layers panel → **Styles** → pick the original (usually *default*).
 
-## A simple way to begin
+### Why direction matters
 
-1. Add your roads to the map. Draw each road in the direction the numbers increase. Split roads where they meet, or let the plugin split them later.
-2. On **Settings → Fields**, confirm the plugin found the From, To, and street-name columns. Load your state's field list if you have one, then click **Save**.
-3. On **Streets**, choose or create the master street-name table. **Build from roads** collects the names already on the roads and lets you pick one spelling for each road.
-4. On **Ranges → Method**, choose how ranges are assigned. Try it on a few selected roads, look at the result, then range the rest.
-5. On **Addresses**, choose the address-point layer. Click **Place address**, click the road where the driveway meets it, then click the building.
-6. On **Check**, run a check before you export. Overlapping ranges are selected so you can fix them first.
+House numbers follow the direction a road was drawn:
+
+- **From** is at the start of the line (green dot), **To** is at the end (red square).
+- **Left** and **Right** are as you'd see them driving from the green dot toward the red square.
+- New addresses are numbered by their distance from the start of the street, so a road drawn backwards gets its numbers backwards too.
+
+If addresses are coming out wrong on a road, look at its arrows. They should point the way the numbers go up.
+
+> 💡 **Check → Results** also lists pieces of a street that run against their neighbors (*DIRECTION_CONFLICT*). Select them from the results, then click **Reverse**.
+
+### One-way roads (routing)
+
+The NENA **OneWay** field tells routing which way traffic may travel:
+
+| Value | Meaning |
+|---|---|
+| **B** | Two-way |
+| **FT** | One-way **From → To**: traffic travels the way the line was drawn (green dot toward red square) |
+| **TF** | One-way **To → From**: traffic travels against the way the line was drawn |
+
+Select the roads, click **One-way ▾** on the toolbar, and pick **Two-way**, **From → To**, **To → From**, or **Clear**. Only OneWay changes; the line and its address numbers stay as they are. If the layer has no OneWay field yet, the plugin offers to add it.
+
+With the NENA style, one-way roads show **large red arrows in the direction of travel** in place of the small blue drawing-direction arrows, so you can check them at a glance.
+
+> 💡 **Reverse** flips FT ↔ TF for you, so the direction of travel stays the same on the ground.
+
+### Reverse a road
+
+1. Select the road pieces that point the wrong way.
+2. Click **Reverse** on the toolbar.
+3. Choose one:
+
+| Choice | Use it when |
+|---|---|
+| **Reverse and re-range** (usual) | The line was drawn backwards. The plugin reverses it, then ranges it again in the new direction with your parity settings (odd on the left, even on the right) |
+| **Reverse only** | You want to keep the existing numbers exactly. Each side's From/To and parity move with it, so they now read the other way |
+
+What happens either way:
+
+- The line is flipped, so the green dot and red square swap ends.
+- All left/right fields swap (ESN, ZIP, community, parity, and the rest), so values stay on the correct physical side of the road.
+- With **Reverse only**, From/To ranges and parity swap so every house keeps its number. With **Reverse and re-range**, the roads get new ranges with odd on the left and even on the right.
+- One-way flips (**FT** ↔ **TF**).
+- Address points and access points on that road switch side (**L** ↔ **R**) to match.
+
+It's one undo step, like any other edit. Save the layer to keep it.
+
+> ⚠️ QGIS's own **Reverse Line** tool flips the line only. Its left/right fields and ranges stay where they were, so they end up on the wrong side. Use the plugin's **Reverse** instead.
+
+---
+
+## Drop-down lists (lookup tables)
+
+Drop-downs make sure everyone types values the same way. Instead of *St*, *ST.*, and *Street* all ending up in your data, the editor picks from a list.
+
+### Which fields get a drop-down
+
+| Kind of list | Lists | Where they're stored |
+|---|---|---|
+| **Lookup tables** | Road (street) type, unit type, address status, road status, address type | One small table each |
+| **Local lists** | County, incorporated municipality, unincorporated community, neighborhood, ZIP code, postal community, ESN, MSAG community, road class, placement method, discrepancy agency, street-name separator | One shared table called **NENA_Domains** |
+| **Fixed NENA lists** | Directionals (North, South…), parity (O/E/B/Z), one-way (B/FT/TF), valid (Y/N), country, state | Built in. Nothing to set up |
+
+These go on your **address points**, **both sides of your centerlines** (`_L` and `_R` fields), and your **street-name table**.
+
+**ZIP narrows the postal community.** Each postal community can list its ZIP code as its **Parent**. Once a feature has a ZIP code, the postal-community drop-down shows only the communities in that ZIP.
+
+### Setting them up
+
+Open **NENA ▾ → Lookup tables**. The top of the window lists every drop-down, where it's stored, and how many fields use it. Lists shown in red are missing.
+
+1. **Create missing tables.** Makes any missing table in the same place as your address points (same GeoPackage, file geodatabase, or database) and fills it with standard values.
+   - Tables that already exist are reconnected, not overwritten.
+   - Using shapefiles? A new `NENA_Lookups.gpkg` is created next to them.
+2. **Load values from my data.** Gathers the counties, communities, ZIP codes, ESNs, and other values already in your address points and centerlines. You'll see the list first, so you can untick any typos before they're added.
+3. **Reconnect drop-downs.** Puts the drop-downs back on every matching field. Use this after adding new fields or layers.
+   - Fields are found by your field match, by NENA name, or by common older names like `PRETYPE` and `ZIP_L`.
+   - If you set up a different widget on a field yourself, it's left alone unless you choose to replace it.
+
+Drop-downs are reapplied every time you open the project.
+
+### Editing a list
+
+Click a list at the top, then edit its values below. **Every change saves right away.**
+
+| To… | Do this |
+|---|---|
+| Add a value | Type the **Code** (what's stored) and **Label** (what's shown), then click **Add** |
+| Change a value | Double-click the cell |
+| Stop offering a value | Untick **In list**. It stays in the table but drops out of the drop-down |
+| Reorder | Drag rows, or use **Move up**, **Move down**, or **Sort A–Z** |
+| Remove a mistake | Select it and click **Delete** |
+
+> ⚠️ Features store the **code**. If you change a code, features that already use the old code are not updated.
+
+**How the stored value works:** address points store the code for unit type, status, and address type. Roads store the road-status code. Street types store the full word (*Street*, *Lane*, *Court*) so the full road name reads naturally. The Road Type list still keeps the abbreviation (*ST*, *LN*) as its code.
+
+---
 
 ## Street names
 
-One table holds every road name. Roads and address points keep a link to that table, and they also keep the name parts an export needs (direction, name, type, and so on). When you rename a street, every linked road and address follows.
+The plugin keeps **one master table of street names**. Roads and address points link to it, and they also keep their own copy of the name parts (directional, name, type, and so on) for NENA exports.
+
+**Rename a street once, and every linked road and address updates.**
 
 ### Set up the list
 
+Open **NENA ▾ → Streets**.
+
 | Setting | What to choose |
 |---|---|
-| Master street names | An existing table, or **Create** to make a new one in a GeoPackage or in any database connection QGIS already has |
-| Address points | Optional until you are placing addresses. Renames update them too |
-| Link field | `StreetID` unless your data already uses another column. **Add to layers** creates it |
+| Master street names | An existing table, or **Create** to make one in a GeoPackage or database |
+| Address points | Optional until you start placing addresses. Renames update them too |
+| Link field | Usually `StreetID`. **Add to layers** creates it on your roads and addresses |
 
-**Add missing fields** fills in columns the master table does not have yet.
+Each street row holds the name parts, the full name, a status (Active, Proposed, or Retired), and the old name after a rename.
 
-Each master row has the name parts, a full name, a status (Active, Proposed, or Retired), and room for the old name when a road is renamed.
+### Build the list from your roads
 
-### When two names are the same road
+**Build from roads** reads the names on your centerlines and groups different spellings of the same street together (`Main St`, `MAIN ST`, `Main Street`). Double-click the spelling you want to keep.
 
-These choices are on **Settings → Street rules**.
+- One master row is created per street. Running it again reuses existing rows.
+- The link is written to the roads, and to address points with the same name.
+- You can also have it rewrite those features to use the spelling you picked.
+- Roads with no name are skipped.
+
+### Everyday tasks
+
+| Button | What it does |
+|---|---|
+| **Add** / **Rename** | Opens a form with the name parts, a preview of the full name, and a duplicate check. Rename tells you how many roads and addresses will change, and can keep the old name as a retired alias |
+| **Retire** | Keeps the street for history. The check flags anything still using it |
+| **Assign to selected** | Links the selected road pieces to the chosen street |
+| **StreetID drop-down** | Makes the link a searchable list of active street names in the attribute form |
+| **Sync to features** | Copies the master name onto every linked road and address |
+| **Check names** | Lists duplicates, sound-alikes, missing links, and names out of sync |
+
+Two things happen automatically. You can turn either off under **Settings → Street rules → When names change**:
+
+- Edit a name part directly in the master table, and the linked features update.
+- Pick a street on a road or address, and its name parts are copied to that feature.
+
+### When are two names "the same"?
+
+Set this under **Settings → Street rules**.
 
 | Choice | What it means | Usual setting |
 |---|---|---|
-| Where names must be unique | Across the whole county, or only inside one community, city, ZIP, or ESN | Whole county |
-| What is compared | The full name, so North Main Street and South Main Street are different. Or ignore the street type, so Oak Street and Oak Avenue are the same | Full name |
-| Sound-alike names | Smith Road and Smyth Road are reported | Warn |
-| Exact duplicates | The plugin can refuse the save, or only warn you | Block |
+| Where names must be unique | The whole county, or only within one community, city, ZIP, or ESN | Whole county |
+| What gets compared | The full name (*N Main St* ≠ *S Main St*), or the name without its type (*Oak St* = *Oak Ave*) | Full name |
+| Sound-alike names | *Smith Rd* vs *Smyth Rd* are reported | Warn |
+| Exact duplicates | Refuse the save, or just warn | Block |
 
-`N` and `North` match. `St` and `Street` match. `Co Rd` and `County Road` match. Capital letters and periods are ignored.
+These always count as the same: `N` / `North`, `St` / `Street`, `Co Rd` / `County Road`. Capital letters and periods are ignored.
 
-**Street types** on that same page is the list in the name form. It starts as the usual USPS and NENA types: Street, Avenue, Lane, County Road, and the rest. You can add a local type or a local abbreviation. Click **Save** at the top of the panel to keep the list in the project.
+**Street types list.** **Settings → Street rules → Street types** is the list shown in the name form. It starts with the standard USPS and NENA types, and you can add local types or abbreviations. Typing `ST` becomes `Street` before the name is checked. Types already stored on roads stay as they are until you rename that road.
 
-Typing `ST` in the name form becomes `Street` before the name is checked and saved. A type already stored on a road is left as it is until you rename that road. A one-off type you type into a single name is not added to the list.
+**PostgreSQL users:** **Database SQL** in the Streets window can add database rules so the street links stay correct even when someone edits outside QGIS. With a GeoPackage, the plugin handles this itself.
 
-### Build the list from the roads
+---
 
-**Build from roads** reads the names on the centerlines and groups different spellings of the same road (`Main St`, `MAIN ST`, `Main Street`). Double-click the spelling you want to keep. Sound-alike names are listed so you can see them.
+## Placing addresses
 
-Build creates one master row per road. Run it again later and it reuses rows that are already there. It writes the link onto the roads, and onto address points with the same name. You can also have it rewrite those features to the spelling you kept. A road with a blank name is skipped.
+Open **NENA ▾ → Addresses** and choose your address-point layer and your access-point layer. A driveway layer is optional.
 
-### Day to day
+> **What's an access point?** It's the spot just off the road where the address is reached. Place address saves one 10 feet straight off your click, on the building's side of the road. The address stores that access point's id, and the access point stores the road's id. Several addresses can share one, like an apartment building.
 
-- **Add** and **Rename** open a form with the name parts, a preview of the full name, and a check for duplicates. Rename tells you how many roads and addresses will change, and can keep the old spelling as a retired alias.
-- **Retire** keeps the row for history. A check will flag anything that still uses it.
-- **Assign to selected** links the selected road pieces to the street you picked.
-- **StreetID drop-down** turns the link into a searchable list of active names in the attribute form.
-- **Sync to features** copies the master name onto every linked road and address.
-- **Check names** lists duplicates, sound-alikes, missing links, and names that have drifted out of sync.
-
-Two automatic behaviors live under **When names change** on **Settings → Street rules**. You can turn either one off.
-
-- If you type a new name part directly in the master table, linked features update.
-- If you pick a street on a road or an address, the name parts are copied onto that feature.
-
-Each of those is its own undo step.
-
-**Database SQL** on the Streets tab is for PostgreSQL. It can write database rules so every program, not only QGIS, keeps the street links: a unique id, links that must match a real street, and a rename that updates the related rows. With a GeoPackage, the plugin keeps those links itself.
-
-## Addresses
-
-Choose the address-point layer on the Addresses tab. A driveway layer is optional. **Create** can make either layer in a GeoPackage or in a database connection.
-
-A new address layer starts with the usual NENA site and structure fields. **Template** can load your state's field list instead. The plugin also keeps a few of its own columns on the point: which street it belongs to, which road it was measured on, where access meets the road, and which side of the road it is on. Leave those out of a NENA export if your exchange does not expect them.
-
-The full road name is filled in when you create, re-address, assign, or sync an address. A full name you typed yourself stays until a rename of the master street replaces it.
-
-You do not have to draw a driveway. The address point remembers where access meets the road either way. Draw a line when the path matters, or when several addresses share one driveway.
+A new address layer starts with the standard NENA site/structure fields. **Template** loads your state's field list instead. The plugin adds a few of its own columns (street link, the road it was measured on, access location, side of road). Leave those out of your NENA export if your exchange doesn't expect them.
 
 ### Place an address
 
-1. Click the road where access meets it. Snapping follows your QGIS snap settings. Click an existing driveway to use that driveway's access point instead.
-2. Click the building.
-3. The dialog shows the number, the street name, the community values, and any warning. You can change the number, suffix, unit, and placement before you create the point.
-4. A straight driveway is not drawn unless you hold **Shift** on the building click, or you turned **Straight driveway with Place address** on. You can also tick **Draw a straight driveway** in the dialog.
-5. Backspace or Esc clears the click. Esc again, or a right-click before you have clicked, leaves the tool.
+1. Click **Address** on the toolbar.
+2. **Click the road** where the address is reached. Snapping follows your QGIS snap settings. Clicking an existing driveway uses that driveway's access point.
+3. **Click the building.**
+4. A dialog shows the house number, street, community values, and any warnings. You can change the number, suffix, unit, and placement before creating the point.
 
-**Undo last address** removes that point and, if the same click drew a straight driveway, the driveway too.
+The access point is written 10 feet straight off the road click, on the building's side. It is linked to the address and to the centerline. Use **Driveway** when you want the path drawn.
+
+| Tip | |
+|---|---|
+| Clicked the wrong spot? | Press **Backspace** or **Esc** |
+| Building right next to the road? | Building clicks never snap onto a road line, so the side is always read from where you actually clicked |
+| Done? | **Esc** again, or right-click, to leave the tool |
+| Made a mistake? | **Undo** removes the address, plus any driveway or access point made with it (access points are kept if something else still uses them) |
+
+If you delete an access point that addresses still use, the plugin puts it back and tells you which addresses to move first.
 
 ### Draw a driveway
 
-1. Click the road, or click an existing driveway to start a branch off it.
-2. Click each bend. The line follows the cursor.
-3. Right-click or double-click to finish. Backspace removes the last bend. Esc starts over.
+1. Click **Driveway** on the toolbar.
+2. Click the road (or an existing driveway to branch off it).
+3. Click each bend.
+4. Right-click or double-click to finish. **Backspace** removes the last bend, and **Esc** starts over.
 
-The line is not tied to an address yet. The next **Place address** or **Place units** click on that line uses its access point, so several addresses can share it. Undo the driveway on the driveway layer.
+The next address you place on that driveway shares its access point.
 
-### Place units
+### Place units (apartments, townhomes)
 
-Use this for an apartment building, a townhouse row, or any site where many addresses share one access.
+1. Click **Units** on the toolbar.
+2. Pick a **Unit type** (Apt, Unit, Suite…) in the small window that opens.
+3. Click the road or driveway once. The window shows the house number for **both** sides of the road, for example *L 151 / R 150*.
+4. Click the first unit. **Its side of the road picks the house number** (odd or even), and every unit under that roof keeps it.
+5. Click the rest of the units. The **unit number** counts up: 1, 2, 3 / 101, 102, 103 / A, B, C, and other styles.
+6. Right-click or **Esc** finishes this building. **Esc** again leaves the tool.
 
-1. Click the road or an existing driveway once. A small panel shows the base number, the numbering style, and the next unit.
-2. Click each building. Each click creates an address with that same access. The tool stays on.
-3. Right-click or Esc ends this access. Esc again leaves the tool.
+If you type your own house number and it's odd on the even side (or the other way round), you'll get a warning.
 
-| Style | What you get |
-|---|---|
-| 101, 102, 103 | The street number steps by one |
-| 101A, 101B | One street number, with a letter suffix. Start at 1 for A |
-| 1, 2, 3 | The unit field. Leave the prefix blank, or type `Unit ` to get Unit 1, Unit 2 |
+**Straight driveway for each unit** is off by default. Turn it on only when each unit needs its own line.
 
-The first building fills in the base number. You can change it before the next click. **Straight driveway for each unit** is off. Turn it on only when each unit needs its own line from the access point to that building.
+### How the house number is chosen
 
-### How the number is chosen
+Everything is worked out **on the segment you click**. Other segments of the same street don't change the number.
 
-**Settings → Address rules** controls this. The first unit in a Place units session uses the same rules.
+Set the method under **Settings → Address rules**. The first unit in a Place units session uses the same rules.
 
 | Step | What happens |
 |---|---|
-| Side of the road | The building's side, judged from the direction of the road at the access point. This still works on a curve or a corner lot |
-| The number | **Along the road** (the usual setting): start at the low end of the street and add one number every so often. 5.28 feet is about 1,000 numbers per mile. **Inside the road's range**: the From and To already on that side of the segment decide the number. **By frontage**: a fixed count of numbers for each lot width |
-| Odd or even | Rounded to the side's parity. The road's own left/right parity wins when it is filled in. A side marked Z has no addresses, and the tool will not place one there |
-| Order | The new number stays between the addresses already on that side, so numbers still increase along the street |
-| A number already used | Take the next free number, add a suffix such as 101A, or ask. A suffix is used when no whole number fits between the neighbors |
-| One community, different rules | A community, ESN, ZIP, city, or county can have its own method, spacing, or starting number |
+| **Left or right** | Comes from the direction the segment was drawn. Stand at its first point (green dot) facing its last point (red square): left is left |
+| **Odd or even** | Comes from your settings: by default **odd on the left, even on the right**. If the segment's own Parity_L/Parity_R says otherwise, you get a warning and your settings are still used. Re-range the segment to fix it. (To let the segment's parity win instead, tick that option on Address rules.) A side marked **Z** gets no addresses |
+| **The number: Calculated** (default) | The segment's **From** number on that side, plus one number for every set distance from the segment's first point. 5.28 ft per number is about 1,000 numbers per mile. A segment with no From number starts at the start number you set |
+| **The number: Interpolated** | Placed between the segment's **From** and **To** on that side, in proportion to how far along the segment you clicked |
+| **The number: By frontage** | The segment's From, plus a fixed count of numbers for each lot width from the segment's first point |
+| **Order** | Stays between the addresses already on that side of the **same segment**, so numbers keep increasing along it |
+| **Number already taken** | Takes the next free number, adds a suffix (101A), or asks you. If the number is already used on another segment of the street, you're warned |
+| **Different rules by area** | A community, ESN, ZIP, city, or county can have its own method or spacing |
 
-The road's start is the start of that street's connected pieces, in the direction they were drawn. A branch continues from the point where it leaves the main road.
+If the number falls outside the segment's From–To on that side, the dialog tells you and suggests re-ranging.
 
-If the calculated number falls outside the From–To on that side, the dialog says so and suggests re-ranging the segment.
+### ZIP, community, and ESN
 
-### Which community, ZIP, and ESN
+Under **Settings → Sides**, pick your ZIP, MSAG community, and ESN polygon layers. A road is often a boundary, so left and right can differ.
 
-On **Settings → Sides**, pick the polygon layer and the field for ZIP, MSAG community, and ESN. A road is often the boundary, so the left side and the right side can differ.
+- **Calculate sides** writes those values to each side of the road.
+- **Split where the side changes** cuts the road where a boundary crosses it, and updates the addresses on those pieces.
+- **Copy road side** gives existing address points the values from their side of the road.
+- New addresses copy their side automatically.
 
-**Calculate sides** writes those values onto the road, a few metres off each side. **Split where the side changes** cuts the road where the polygon changes, gives each piece its own left and right values, and updates the addresses that sit on those pieces.
-
-A new address copies the side it sits on. **Copy road side** does the same for points you have already placed. An empty side on the road is filled in when the address is created, then copied to the point.
-
-While address points are selected, the map shows a temporary marker: a circle where access meets the road, a dashed line to the building, and the number. Blue means the access point is still on the road. Red means the road has moved away from the stored access point. A hollow grey circle means the access point was inferred. Clear the selection and the markers go away. Nothing is written.
+**Map markers:** when address points are selected, the map shows where each one meets the road. Blue means OK. Red means the road has moved away from the access point. Hollow grey means the access point was estimated. Nothing is written. Clear the selection and the markers go away.
 
 ### Renaming part of a road
 
-If you assign some pieces of a road to a different street, and those pieces already have addresses, the addresses take the new name. A dialog lists them with the numbers the new street would give. You can keep the old numbers, re-address all of them, or re-address only the ones you tick.
+If you assign some road pieces to a different street and they already have addresses, a dialog lists those addresses with their new numbers. Keep the old numbers, re-address all of them, or re-address only the ones you tick.
 
 ### Reports
 
-**Streets report** is a CSV of every master name, with its status, alias, how many pieces and addresses it has, and the lowest and highest number. **Addresses by community** counts addresses by MSAG, ZIP, ESN, or city.
+- **Streets report**: a CSV of every street, with its status, alias, piece count, address count, and number range.
+- **Addresses by community**: counts addresses by MSAG, ZIP, ESN, or city.
 
-## Address ranges
+---
 
-Open **Ranges**. The method you pick is shown on the Run page.
+## Address ranges on roads
 
-A few rules apply to every method:
+Open **NENA ▾ → Ranges**.
 
-- Draw the road in the direction the numbers increase. From is at the start of the line.
-- Left and right are from that direction. The usual pairing is odd on the left and even on the right. An existing parity, including Z for "no addresses on this side", is kept unless you turn that off.
-- **Street chains** treats connected pieces of the same road as one street and numbers them in order, so neighboring pieces do not overlap. **Each feature** numbers every piece on its own.
+**The basics (all methods):**
 
-| Method | What you get |
-|---|---|
-| Hundred-block | Each piece of the street gets the next block, such as 100–198 and 101–199, then 200–298 and 201–299. You set the starting number and the block size |
-| Interval | The number grows by one for every distance you set. 5.28 feet is about 1,000 numbers per mile. Any coordinate system works, because length is measured on the ground |
-| Proportional | You supply the low and high number for the whole street, or the plugin uses the low and high already on the pieces. The range is spread by length. It can bend through existing address points so a house keeps a range that contains its number |
-| From address points | The range on each side comes from the house numbers near that piece. You can widen the result out to the whole block |
+- Draw roads in the direction numbers go up. **From** is at the start of the line.
+- Left and right follow that direction. Usually odd numbers are on the left and even on the right. Existing parity, including **Z** (no addresses), is kept unless you turn that off.
+- **Street chains** numbers connected pieces of the same street in order, so they don't overlap. **Each feature** numbers every piece on its own.
 
-For hundred-block and interval, the street can continue from the piece upstream, keep the From already on the first piece, or always start at the base number you typed.
+| Method | What you get | Good for |
+|---|---|---|
+| **Hundred-block** | Each piece gets the next block: 100–198/101–199, then 200–298/201–299… | City grids |
+| **Interval** | Numbers go up by distance (5.28 ft ≈ 1,000 per mile) | Rural distance-based addressing |
+| **Proportional** | Spreads a low–high range across the street by length, and can bend around existing addresses | Fitting existing numbers |
+| **From address points** | Builds the range from the house numbers near each piece | Data with good address points |
 
-**Range selected** and **Range layer** do the work in one undo step. The layer is put in edit mode if it was not already.
+**Range selected** and **Range layer** run as one undo step.
 
-**Fill range gaps** extends a piece so its numbers meet the next piece of the same street. What counts as a gap is the tolerance on **Check → Checks**. An overlap is left alone.
+**Fill range gaps** extends a piece so its numbers meet the next piece of the same street. Overlaps are left alone. The gap tolerance is set on **Check → Checks**.
 
-Only features whose values change are edited.
+Only features whose values actually change are edited.
+
+---
 
 ## When you edit a road
 
-These options are on **Settings → Editing**. The split tool and the gap tool are on **Ranges → Run**.
+Turn these on or off under **Settings → Editing**.
 
-**Re-range pieces after Split Features.** After you split a road with QGIS, the original range is divided across the pieces by length. The first piece keeps From, the last piece keeps To, and odd and even stay as they were. Undo once puts the original numbers back. Undo again removes the split.
+| You… | The plugin… |
+|---|---|
+| **Split** a road with QGIS | Divides the original range across the pieces by length. The first piece keeps **From**, the last keeps **To**. Undo once to restore the numbers, again to undo the split. If an address-point layer is set on **Ranges → Method**, houses keep their numbers on the piece they actually front |
+| Use the **Split** tool | One click: hover to preview, click to split. Both pieces are re-ranged and the new piece gets a new ID. One undo step |
+| **Draw a new road** that ends on or crosses another road | Splits the existing road there and continues the range. Turn off "crossings" where you have overpasses |
+| Have **old roads that cross** without being split | **Split at intersections** finds and splits them, then re-ranges |
+| **Merge** roads | With **Combine ranges after Merge** on, the merged road gets the lowest From and highest To. *Select the pieces before you merge.* |
+| **Reshape** a road | Can recompute the high number from the new length, or from nearby addresses |
+| Split with another tool | **Redistribute** spreads the combined range over the selected pieces |
 
-If an address-point layer is set on **Ranges → Method**, the split is anchored to those points. A house keeps its number on the piece it actually fronts, even when the numbers are not spaced evenly along the road. Points that fall outside the range, on the wrong parity, or out of order are ignored. With no points, the split is by length only.
+**IDs:** enter your agency ID under **Settings → Editing**. **Fill empty** gives roads without one a NENA ID. Pieces created by a split always get a new ID.
 
-**Split & Re-range** is the one-click tool. Hover to preview the cut, then click. Both pieces are re-ranged, and the new piece gets a new id. It is one undo step. Right-click or Esc leaves the tool. The layer has to be editable. A click too close to an end is ignored.
+---
 
-**A new road that meets an existing road.** This is on by default. When you draw a road that ends on the middle of another road, or crosses one, the existing road is split there and the range continues on the new piece. A road that only extends another road from its endpoint does not cause a split. You can turn crossings off where you have overpasses. Pasting or importing a large batch is not split automatically. The new road itself is not given a range by this step.
+## Checking your data
 
-**Roads that already cross.** **Split at intersections** finds those places in data you imported, splits them, and re-ranges. End-to-end joins are left as they are. If nothing is selected, the whole layer is checked. When ZIP, MSAG, and ESN polygons are set, the new pieces are calculated again.
+Click **Validate** on the toolbar, or open **NENA ▾ → Check**.
 
-**Merge.** Turn on **Combine ranges after Merge**, and select the pieces before you merge them. The merged road gets the lowest From and the highest To on each side.
+The **Results** page lists every problem. Double-click a row to zoom to it. You can select the features, export a CSV, or load the problems as a temporary layer. Overlapping ranges are selected automatically.
 
-**Reshape.** You can have the high number recomputed from the new length, or taken again from nearby address points. The low number stays.
+**What it looks for:**
 
-**Redistribute selected** spreads the combined low and high of the selected pieces by length. Use it after you split with some other tool.
-
-**Ids.** On **Settings → Editing**, enter your agency id. **Fill empty** writes a NENA id on roads that do not have one, and fills an empty discrepancy agency id. New pieces from a split get a new id so two roads never share one.
-
-## Checking the data
-
-**Check → Results** lists what it found. Double-click a row to zoom. You can select the features, export a CSV, or load a temporary layer of the problem shapes. **Validate selected** limits the list to the selection. Checks that compare one road with another still look at the whole layer.
-
-Overlapping ranges are selected when the check finishes, so they are ready in the attribute table. The toolbar button **Find & select overlapping address ranges** runs only that check, which is faster on a large layer.
-
-The check looks for:
-
-- Required values that are missing, including a parity that is empty or not odd, even, both, or none
-- A range that is missing, negative, only filled in on one end, or running backwards
-- Two pieces of the same street that claim the same numbers, or a gap between pieces
-- Pieces of one street that were drawn in conflicting directions
-- A parity that does not match the numbers on that side
-- Ids that are missing, duplicated, or not in the expected form
+- Missing required values, or a parity that isn't O, E, B, or Z
+- Ranges that are missing, negative, half-filled, or backwards
+- Two pieces of the same street claiming the same numbers, or gaps between pieces
+- Pieces of one street drawn in opposite directions
+- Parity that doesn't match the numbers on that side
+- Missing, duplicate, or badly formed IDs
 - Empty, zero-length, or broken geometry
-- Names that no longer match the master list
+- Names that don't match the master street list
 
-**Check → MSAG** compares your roads with the telephone company's MSAG. Load that file into the project, then pick the street, community, low, high, and odd/even columns. `MAIN ST` matches `Main Street`. A side of a road matches when its whole range sits inside an MSAG row for the same street, community, and odd/even. Rows on the MSAG that are not in your map are listed too.
+**Address checks** (from the Addresses window) catch numbers outside the road's range, the wrong odd/even side, numbers out of order, duplicates, access points that have moved off the road, missing streets, and ZIP/community/ESN values that don't match the road side.
 
-Address checks, from the Addresses tab, catch a number outside the road's range, the wrong odd/even side, a number out of order, a duplicate, an access point that has left the road, a missing street, and a ZIP, community, or ESN that does not match the side of the road.
+**MSAG comparison** (**Check → MSAG**): load your telephone company's MSAG into the project, pick its columns, and compare. `MAIN ST` matches `Main Street`. MSAG rows that aren't on your map are listed too.
 
-## Settings, one page at a time
+---
 
-### Project
+## Settings
 
-**Create schema** makes an empty set of tables and points the panel at them. **Import** copies features from layers already in the project. **Versions** creates the history tables. **Track changes** records each save. Details are in the next section.
+Open **NENA ▾ → Settings**. These are things you set once. **They save automatically.**
 
-### Fields
+| Page | What you set |
+|---|---|
+| **Fields** | Match your road layer's columns to NENA names |
+| **Sides** | ZIP, MSAG community, and ESN polygon layers |
+| **Defaults** | Values like state, county, and one-way that fill **only empty** fields. Leave parity blank if you want ranging to set it |
+| **Street rules** | When two names count as the same, and what a rename does |
+| **Address rules** | How a new address gets its number |
+| **Editing** | What happens when you split, merge, or add a road, plus IDs |
 
-The plugin matches columns by NENA name and by names often seen in older data, such as `L_F_ADD`, `FROMLEFT`, and `STREETNAME`. Review the list. Required fields that are still unmatched are shown in bold.
+**More on Fields:**
 
-**Add mandatory** and **Add all fields** create the missing columns. Names stay short enough for a shapefile.
+- **Add mandatory** / **Add all fields** create missing columns. Names stay short enough for shapefiles.
+- **Street key** decides which pieces belong to the same street. The default is all the name parts together.
+- **Field template** loads your state's column list from a GeoPackage, shapefile, GeoJSON, layer, JSON, or CSV. See the `examples` folder. **Back to the built-in NENA schema** clears it.
+- The field match is stored on the layer, so it travels with the project. **Export JSON** and **Import JSON** reuse it elsewhere.
+- The full field list is in [`docs/NENA_SCHEMA.md`](docs/NENA_SCHEMA.md).
 
-**Street key** decides which pieces belong to the same street. The default is all of the name parts together.
+---
 
-**Field template** loads the list of columns your layer is supposed to have, from a GeoPackage, shapefile, GeoJSON, a layer already in the project, or a JSON or CSV file. Examples are in the `examples` folder. After it loads, the plugin matches those fields and can add any that your layer does not have yet. **Back to the built-in NENA schema** clears the template.
+## New tables, importing, and edit history
 
-**Save** stores the field match on the layer, so it travels with the project. **Export JSON** and **Import JSON** reuse it in another project.
+Open **NENA ▾ → Schema and import**.
 
-The field list, with the usual required and optional flags, is in [`docs/NENA_SCHEMA.md`](docs/NENA_SCHEMA.md).
+### Create a fresh set of NENA tables
 
-### Sides
-
-Pick the ZIP, MSAG community, and ESN polygon layers, then calculate or split as described under Addresses. Other polygon values can be added as extra rules if you need them.
-
-### Defaults
-
-State, county, country, one-way, parity, and any other field you add here are filled only where the feature is blank. A value someone already entered is left alone. A new road and a new piece from a split get the same fill.
-
-Leave parity blank here if you want ranging to set odd and even.
-
-A new address uses the default for its side when that side of the road is empty.
-
-### Street rules and address rules
-
-Covered above under Street names and Addresses.
-
-### Editing
-
-Covered above under When you edit a road. The automatic tools start working after the layer's settings have been saved.
-
-## New tables, import, and history
-
-### Create a fresh set of tables
-
-**Settings → Project → Create schema**, or **Vector → NENA Addressing Tools → Create NENA schema**.
+Click **Create schema** and choose where the tables go:
 
 | Destination | What you pick |
 |---|---|
-| GeoPackage | One `.gpkg` file. The tables are added to it |
-| File geodatabase | A folder whose name ends in `.gdb` |
-| Database | A connection already defined in QGIS. The schema, such as `public` or `dbo`, is created if it is not there yet |
+| GeoPackage | One `.gpkg` file |
+| File geodatabase | A folder ending in `.gdb` |
+| Database | A connection already set up in QGIS. The schema (like `public` or `dbo`) is created if needed |
 
-Choose one coordinate system. It is used for the roads, the address points, and the driveways. A table prefix is optional.
+Pick one coordinate system. A table name prefix is optional.
 
 | Table | What it holds |
 |---|---|
-| Road centerlines | The road lines and their ranges |
-| Street names | The master name list |
-| Address points | One point per address |
-| Driveways | The path from the road to the building, when you draw one |
+| RoadCenterline | Road lines and their ranges |
+| StreetNames | The master street-name list |
+| SiteStructureAddressPoint | One point per address |
+| Driveway | Driveway paths, when you draw them |
+| AccessPoint | Where driveways leave the road |
+| RoadType, UnitType, AddressStatus, RoadStatus, AddressType | Drop-down lists, pre-filled with standard values |
+| NENA_Domains | Local drop-down lists (counties, communities, ZIPs, ESNs, road classes…) |
 
-**Replace tables that already exist** overwrites tables of those names. Other tables in the file or database are left alone. The new layers are grouped in the project.
+ZIP, MSAG, and city boundary polygons are not created here. Use the ones you already have.
 
-ZIP, MSAG, and city polygons are not created here. Keep the polygon layers you already have, and point **Settings → Sides** at them.
+**Replace tables that already exist** overwrites tables with the same names. Other tables are untouched.
 
-### Import what you already have
+### Import your existing data
 
-**Import** copies features from layers in the project into those tables. Each destination has its own source. The column match starts from NENA names and older aliases. **Fields** lets you change the match before the copy.
+**Import** copies features from layers in your project into the new tables.
 
-You can import only the selected features. Geometry is reprojected into the destination. A street-name row with a blank street name is left out. A road or an address is still copied when its name is blank, and any required field that could not be matched is reported.
-
-Import writes the destination immediately. Later edits with the address and range tools stay in the edit buffer until you save those layers.
+- Columns are matched by NENA name and common older names. Click **Fields** to adjust the match.
+- You can import only the selected features.
+- Geometry is reprojected for you.
+- Required fields that couldn't be matched are reported.
 
 ### Who made the edit
 
-On PostgreSQL, SQL Server, Oracle, and SAP HANA, a save writes the database login. **Who entered** is filled only when it is empty, and only on a new feature. **Last updated by** is written on every new or changed feature. A value already in **Who entered** stays, including on a piece created by a split.
+On PostgreSQL, SQL Server, Oracle, and SAP HANA, saves record the database login:
 
-A GeoPackage, file geodatabase, or shapefile has no database login, so those fields are left as they are.
+- **Who entered** is filled once, on new features.
+- **Last updated by** is updated on every save.
 
-### History of each save
+GeoPackages, file geodatabases, and shapefiles have no login, so these fields are left alone.
 
-**Versions** creates one history table for each layer you check, in the same kinds of places as **Create schema**. **Create schema** can add them at the same time.
+### Edit history (versions)
 
-Turn on **Track changes**. Each time you save a road, a street name, an address, or a driveway, a row is added:
+Click **Versions** to create history tables, then turn on **Track changes**. Every time you save a road, street name, address, driveway, or access point, a history row is added.
 
-| What you saved | What is recorded |
+| You saved… | History records… |
 |---|---|
-| A new feature | That feature, as version 1 |
-| A change | The feature as it was saved, plus the old and new values of the fields that changed. A shape change is included |
+| A new feature | The feature, as version 1 |
+| A change | The new feature, plus the old and new values of what changed (including shape) |
 | A delete | The feature that was removed |
 
-The history row stores the shape after that save. The previous row still has the earlier shape. The live layer keeps the current feature.
+To see one feature's history, filter the history table by its ID and sort by version. Drop-down lists aren't tracked. Turn **Track changes** off at any time; the history tables stay.
 
-Filter the history table on the feature's id and sort by version to read one road, name, address, or driveway. The history is written when the live layer is saved, and it is stored immediately. If a history row cannot be written, the live save still stands. Turn **Track changes** off to stop recording. The history tables stay where they are.
-
-An older history table may be named with `_Archive`. Tracking keeps writing to the table the project already uses.
-
-Boundary polygons are not part of this history.
+---
 
 ## Good to know
 
-- This is an editing tool, not a certification against the full NENA standard. Check your authority's own profile before an official submission.
-- Roads are expected to meet at their ends. A crossing in the middle of a line is not a clean intersection until it is split. The plugin can do that split for you.
-- A piece drawn backwards starts its own numbering. The check flags those direction conflicts. It does not reverse the line for you.
-- The plugin sees edits made in this QGIS session. An edit made by another database client is not re-ranged automatically.
-- Select the pieces before you merge them, so the plugin still knows their ranges after QGIS deletes the extras.
-- A new crossing and an overpass look the same to the automatic split. Turn off splits-on-crossings where you have grade separations. A T intersection is still split.
-- Undo is kept per layer. **Undo last address** is the way to remove an address and the driveway that was created with it.
-- A field template brings names, types, and whether a field is required. It does not bring domains or default values stored in a template file.
-- Very large layers are processed in QGIS, with a progress bar.
-- House-number suffixes and hyphenated numbers are not used when ranging. The number is read from the leading digits.
-- Not in this version: a Processing toolbox algorithm, snapping the building click to a footprint layer, rewriting street types already stored on features, or a topology check for dangles and overshoots.
+- **This is an editing tool, not a NENA certification.** Check your 911 authority's own requirements before an official submission.
+- **Roads should meet at their ends.** A road crossing the middle of another isn't an intersection until it's split. The plugin can split it for you.
+- **A piece drawn backwards** starts its own numbering. Validate flags it, and **Reverse** fixes it.
+- **Select pieces before merging**, so the plugin still knows their ranges.
+- **Overpasses:** turn off splitting on crossings where roads pass over each other. T-intersections are still split.
+- **Only edits made in this QGIS session** are re-ranged automatically, not edits from other programs.
+- **Undo is per layer.**
+- **House-number suffixes** (101A, 101-1) aren't used for ranging. Only the leading digits count.
+- **Field templates** bring field names, types, and required flags, but not domains or default values.
+- **Not in this version:** a Processing toolbox algorithm, snapping the building click to footprints, rewriting street types already on features, or a dangles/overshoots topology check.
 
-## Recent changes
+---
 
-- **3.2.10** — This guide. The tools and the settings are explained in plain language.
-- **3.2.9** — Place address, Draw driveway, and Place units are separate tools. A driveway is drawn only when you ask for one. Place units numbers several buildings from one access. The street-name form has an editable list of street types.
-- **3.2.8** — The panel is Streets, Addresses, Ranges, Check, and Settings. Everyday work stays on the first four. Setup is under Settings.
-- **3.2.7** — On a database, Who entered and Last updated by use the connection's login.
-- **3.2.6** — Split a road where the community side changes, split roads that already cross, close gaps in a range, compare roads with an MSAG, and fill empty fields from defaults.
-- **3.2.5** — ZIP, MSAG, and ESN come from the polygon beside each side of the road. A new address copies the side it sits on.
-- **3.2.4** — Each save can record a numbered version, with the old and new values.
-- **3.2.3** — Building the street list skips a road with no name. Side values are taken from the polygon beside that side.
-- **3.2.2** — After a split, the original range is divided across the pieces. New addresses get the full road name.
-- **3.2.1** — The panel scrolls, and the toolbar has its own row.
-- **3.2.0** — Optional history tables for roads, street names, addresses, and driveways.
-- **3.1.0** — Create a new set of tables, and import roads, names, addresses, and driveways into them.
+## Words used in this guide
+
+| Term | Meaning |
+|---|---|
+| **Centerline (RCL)** | A road line. Each piece carries From/To address numbers on its left and right sides |
+| **Range** | The From–To house numbers on one side of a road piece |
+| **Parity** | Which numbers a side gets: **O**dd, **E**ven, **B**oth, or **Z**ero (no addresses) |
+| **Left / Right** | Sides of the road, looking in the direction the line was drawn |
+| **Access point** | Where a driveway leaves the road. Shared access points serve several addresses |
+| **SSAP** | Site/Structure Address Point, NENA's name for an address point |
+| **ESN** | Emergency Service Number, the code for which fire/EMS/police respond |
+| **MSAG** | Master Street Address Guide, the phone company's table of valid address ranges |
+| **NGUID** | NENA Globally Unique ID, the permanent ID on each feature |
+| **Code / Label** | In a drop-down, the **code** is what's saved and the **label** is what you see |
+| **Edit buffer** | Changes in QGIS that aren't saved to the file or database yet |
+
+---
+
+## What's new
+
+- **3.6.3** — Place address saves an access point 10 feet straight off the road click, on the building's side, linked to the address and the centerline. Draw driveway is the tool for the path.
+- **3.6.2** — A new house number follows where you click, counting from the start of the line (the green dot). Coordinates stored in a SQL Server float column had been saved as whole degrees, so every existing address looked like it sat at the start of the street and the new number was pushed up to the last house.
+- **3.6.1** — New **One-way ▾** tool marks selected roads B, FT, or TF for routing without touching the line or its numbers. One-way roads show red travel arrows in the NENA style.
+- **3.6.0** — House numbers are worked out on the segment you click: **Calculated** counts from that segment's From number and first point (for example one number every 5.28 ft), **Interpolated** uses its From/To. Addresses on other segments of the same street no longer push the number. Odd/even always follows your settings (odd on the left, even on the right); a segment whose Parity_L/R disagrees is reported, not followed. **Reverse and re-range** is now the default and ranges the reversed roads with your parity settings.
+- **3.5.2** — Fixed: an address on a separate, unconnected piece of the same street could push a new house number far too high ("raised above 418"). Numbers are now only compared along connected pieces of a street. Fixed a crash when closing QGIS 4 (or removing a layer) while the plugin was watching that layer. Dialogs such as **New address** now use a normal light background too.
+- **3.5.1** — Fixed: Place units could give units on the right side of a road the left side's odd number. The road click sits on the centerline, so its side couldn't be known; the first unit you click now picks the side. Building and unit clicks no longer snap onto road lines (or onto a cross street at an intersection), which could also put an address on the wrong side.
+- **3.5.0** — **Style NENA layers** gives roads a road look with direction arrows, a green start dot, a red end square, street names, and From/To numbers at each end. Address points become labelled houses, driveways brown dashes, access points blue diamonds. New schema layers are styled automatically. The new **Reverse** tool flips selected roads and swaps their left/right values and ranges so every house keeps its number, flips one-way, and switches the side on linked address and access points. **Reverse and re-range** also ranges them again.
+- **3.4.0** — Drop-down lists for many more fields: county, municipality, communities, ZIP and postal community (narrowed by ZIP), ESN, MSAG community, road class, placement, directionals, parity, one-way, country, and state, on both sides of centerlines. The Lookup tables window shows every list, creates missing tables, and loads values from your data. Values are edited in place and saved right away. Windows have a normal light background, remember their size, and can be docked. The toolbar has a **NENA ▾** window menu and a name under each tool. Settings save automatically.
+- **3.3.1** — Place units keeps the house number from the road click; only the unit number changes. Toolbar split into centerlines and addressing.
+- **3.3.0** — Access points get their own table. Place units assigns a unit type. Road types, unit types, statuses, and address types are editable lookup tables. Each tool opens in its own window.
+- **3.2.10** — This guide, in plain language.
+- **3.2.9** — Place address, Draw driveway, and Place units are separate tools. Driveways only when you ask. Editable street-type list.
+- **3.2.8** — Windows organized into Streets, Addresses, Ranges, Check, and Settings.
+- **3.2.7** — Who entered / Last updated by use the database login.
+- **3.2.6** — Split where the community side changes, split crossing roads, close range gaps, compare with an MSAG, fill empty fields from defaults.
+- **3.2.5** — ZIP, MSAG, and ESN come from the polygon on each side of the road.
+- **3.2.4** — Each save can record a numbered version.
+- **3.2.3** — Building the street list skips unnamed roads.
+- **3.2.2** — Splits divide the original range. New addresses get the full road name.
+- **3.2.1** — Scrolling panels and a toolbar on its own row.
+- **3.2.0** — Optional history tables.
+- **3.1.0** — Create new tables and import existing data.
 - **3.0.0** — Click-to-address, with driveways, community values, and address checks.
-- **2.0.0** — Master street names, with rename across every linked feature.
+- **2.0.0** — Master street names with rename across every linked feature.
 - **1.0.0** — Field mapping, address ranges, and validation.
 
-Older notes are in the plugin's About box.
+---
 
-## If you change the plugin
+## For developers
 
-This repository is the plugin. The copy QGIS loads has to be named `nena_rcl_tools`.
+This repository is the plugin itself. The copy QGIS loads must be named `nena_rcl_tools`.
 
-Tests do not need a QGIS install. Most of them import the plugin as `nena_rcl_tools`. Two test modules import the real folder by its source name, so a Windows junction alone is not enough. From the parent of the real folder:
+The tests don't need QGIS. Most import the plugin as `nena_rcl_tools`, and two import it by its source folder name, so run them from the parent folder:
 
 ```powershell
 New-Item -ItemType Directory -Force -Path "$env:TEMP\nena_py" | Out-Null
@@ -434,6 +646,6 @@ python -m pytest nena_rcl_tools/test -q
 cmd /c rmdir "$env:TEMP\nena_py\nena_rcl_tools"
 ```
 
-Remove the junction with `cmd /c rmdir`. Deleting it in Explorer can delete the source folder.
+> ⚠️ Remove the junction with `cmd /c rmdir`. Deleting it in File Explorer can delete your source folder.
 
-The field list is in [`docs/NENA_SCHEMA.md`](docs/NENA_SCHEMA.md).
+The NENA field list is in [`docs/NENA_SCHEMA.md`](docs/NENA_SCHEMA.md).

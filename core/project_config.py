@@ -58,18 +58,21 @@ class AddressSettings:
     rounding: str = "nearest"                 # nearest | down
     left_parity: str = "O"
     right_parity: str = "E"
-    use_segment_parity: bool = True           # a segment's own Parity_L/R (O/E) wins when set
+    use_segment_parity: bool = True           # kept so an older project still loads; no longer used
+    segment_parity_wins: bool = False         # False: left/right parity above always wins (a mismatch is reported)
     order_check: bool = True
     collision: str = "next"                   # next | suffix | ask
     overrides: Dict[str, Dict] = field(default_factory=dict)   # community value -> {method, distance_per_number, ...}
     override_field: str = "MSAGComm"          # community key the overrides are keyed by
     # creation
     placement: str = "Structure"
-    create_driveway: bool = False            # a straight driveway is optional; Draw driveway digitizes a real path
+    create_driveway: bool = False            # kept so an older project still loads; Place address ignores it
     attribute_at: str = "rooftop"             # kept so an older project still loads; addresses copy the road side
     attribution_rules: List[Dict] = field(default_factory=list)   # {layer_id, layer_source, source_field, target}
     overlay: bool = True
     overlay_limit: int = 300
+    access_layer_id: str = ""
+    access_layer_source: str = ""
 
 
 @dataclass
@@ -101,6 +104,26 @@ class ArchiveSettings:
     address_layer_source: str = ""
     driveway_layer_id: str = ""
     driveway_layer_source: str = ""
+    access_layer_id: str = ""
+    access_layer_source: str = ""
+
+
+@dataclass
+class LookupSettings:
+    """Lookup tables. Each role is ``{role}_layer_id`` / ``{role}_layer_source``."""
+
+    road_type_layer_id: str = ""
+    road_type_layer_source: str = ""
+    unit_type_layer_id: str = ""
+    unit_type_layer_source: str = ""
+    address_status_layer_id: str = ""
+    address_status_layer_source: str = ""
+    road_status_layer_id: str = ""
+    road_status_layer_source: str = ""
+    address_type_layer_id: str = ""
+    address_type_layer_source: str = ""
+    domains_layer_id: str = ""
+    domains_layer_source: str = ""
 
 
 @dataclass
@@ -120,6 +143,7 @@ class ProjectConfig:
     msag: MsagSettings = field(default_factory=MsagSettings)
     archive: ArchiveSettings = field(default_factory=ArchiveSettings)
     street_types: StreetTypeSettings = field(default_factory=StreetTypeSettings)
+    lookups: LookupSettings = field(default_factory=LookupSettings)
 
     def to_json(self, indent=None) -> str:
         return json.dumps(asdict(self), indent=indent)
@@ -132,6 +156,7 @@ class ProjectConfig:
         _load(cfg.msag, (data or {}).get("msag") or {})
         _load(cfg.archive, (data or {}).get("archive") or {})
         _load_street_types(cfg.street_types, (data or {}).get("street_types"))
+        _load(cfg.lookups, (data or {}).get("lookups") or {})
         return cfg
 
     @classmethod
@@ -228,7 +253,7 @@ def resolve_layer(layer_id: str, source: str = ""):
 
 
 def remember(settings, role: str, layer) -> None:
-    """Store a layer for a role ('master', 'centerline', 'address' on StreetSettings; 'driveway' on AddressSettings)."""
+    """Store a layer for a role ('master', 'centerline', 'address'; 'driveway' or 'access'; a lookup role)."""
     setattr(settings, f"{role}_layer_id", layer.id() if layer else "")
     setattr(settings, f"{role}_layer_source", layer.source() if layer else "")
 

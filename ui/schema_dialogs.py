@@ -10,11 +10,11 @@ from qgis.PyQt.QtWidgets import (QCheckBox, QDialog, QDialogButtonBox, QFileDial
                                  QScrollArea, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 
 from ..core.importer import destination_fields, geometry_problem, source_field_names
-from ..core.schema_pack import (ARCHIVE_COLUMNS, SCHEMA_LAYERS, VERSION_TABLE_SUFFIX, defs_for,
+from ..core.schema_pack import (ARCHIVE_COLUMNS, CREATABLE_LAYERS, SCHEMA_LAYERS, VERSION_TABLE_SUFFIX, defs_for,
                                qualified_table, suggest_field_map)
 from ..core.schema_writer import SchemaTarget
 from ..core.tables import db_connections
-from .widgets import combo, hint, set_combo_data
+from .widgets import NormalDialog, combo, hint, set_combo_data
 
 TITLE = "NENA Addressing Tools"
 _DEFAULT_SCHEMA = {"postgres": "public", "mssql": "dbo"}
@@ -28,7 +28,7 @@ def _layer_label(layer) -> str:
     return f"{layer.name()}  ({geom})"
 
 
-class CreateSchemaDialog(QDialog):
+class CreateSchemaDialog(NormalDialog):
     """Pick a GeoPackage, File Geodatabase, or database connection and the layers to create."""
 
     def __init__(self, parent, crs, last_dir, archive_only=False):
@@ -125,7 +125,8 @@ class CreateSchemaDialog(QDialog):
         box = QGroupBox("Layers")
         box_lay = QVBoxLayout(box)
         self._checks = []
-        for spec in SCHEMA_LAYERS:
+        specs = [spec for spec in CREATABLE_LAYERS if spec.versioned] if self._archive_only else CREATABLE_LAYERS
+        for spec in specs:
             cb = QCheckBox(spec.title)
             cb.setChecked(True)
             self._checks.append((cb, spec))
@@ -263,7 +264,7 @@ class CreateSchemaDialog(QDialog):
         return self._result
 
 
-class _FieldMapDialog(QDialog):
+class _FieldMapDialog(NormalDialog):
     def __init__(self, parent, title, dest_names, source_names, current):
         super().__init__(parent)
         self.setWindowTitle(f"Fields — {title}")
@@ -382,7 +383,7 @@ class _LayerRow(QGroupBox):
             self._refresh()
 
 
-class ImportDialog(QDialog):
+class ImportDialog(NormalDialog):
     """Map existing project layers onto the schema layers and copy the features."""
 
     def __init__(self, parent, roles, rcl_template, addr_template):

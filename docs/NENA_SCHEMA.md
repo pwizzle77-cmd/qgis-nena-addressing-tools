@@ -6,9 +6,12 @@ layer of **NENA-STA-006.2 (NG9-1-1 GIS Data Model)**. `M` = mandatory,
 name), `O` = optional. Widths are the suggested text lengths used when the
 plugin creates fields ("Add missing fields", "New template layer", and
 **Create schema**). Create schema also writes the street-name table, the
-site/structure address points, and the driveways into a GeoPackage, a File
-Geodatabase, or a database connection. The same dialog can also create a
-version table for each of those layers: the live fields, plus the plugin's
+site/structure address points, the driveways, the access points, and the
+lookup tables (road type, unit type, address status, road status, and address
+type) into a GeoPackage, a File Geodatabase, or a database connection. An
+address stores `AccessPointID`. An access point is not removed while an
+address or driveway still stores that id. The same dialog can also create a
+version table for each geometry layer and the street-name table: the live fields, plus the plugin's
 version columns (`ArchiveID`, `Version`, `ChangeType`, `ChangeDate`,
 `ChangedBy`, `FeatureKey`, `SourceFid`, `ChangedFields`, `OldValues`,
 `NewValues`). Each saved change is one version of that feature. Those columns
@@ -70,6 +73,16 @@ are not part of NENA-STA-006. See the README, section 2d.
 | `SpeedLimit` | C | Integer |  | Posted speed limit (MPH) | `SPEED`, `SPD_LIM`, `SPEED_LIM`, `SPEEDLIM`, `SPEED_LIMIT` |
 | `Valid_L` | O | Text | 1 | Left side valid for routing/geocoding (Y/N) | `VALIDL` |
 | `Valid_R` | O | Text | 1 | Right side valid for routing/geocoding (Y/N) | `VALIDR` |
+| `StreetID` | O | Text | 38 | Plugin link to the master street names table (not a NENA field) | `STREET_ID`, `STREETGUID`, `ST_ID` |
+| `RoadStatus` | O | Text | 32 | Plugin road-status code from the RoadStatus lookup | `ROAD_STATUS`, `ROADSTATUS`, `RD_STATUS` |
+
+## Access points and lookup lists
+
+`AccessPoint` is a point layer. Its fields are `AccessPointID`, `RCL_NGUID`, `StreetID`, `RoadSide`, `DateUpdate`, `WhoEntered`, `LastUpdatedBy`, and `Notes`. Place address writes the point 10 feet straight off the road click, on the building's side. `RCL_NGUID` is the centerline, and the address stores `AccessPointID`. One access point can be shared. Deleting it is blocked while any address or driveway still stores that id.
+
+Address points also store `UnitType`, `AddressStatus`, and `AddressType`. Those three store the lookup **code**. `St_PosTyp` and `St_PreTyp` store the spelled road-type **label** (Street, Lane, Court) so the full road name stays readable.
+
+The lookup tables `RoadType`, `UnitType`, `AddressStatus`, `RoadStatus`, and `AddressType` have no geometry. Each row is `Code`, `Label`, `SortOrder`, `Active` (`Y` or `N`), and `Notes`. Create schema fills them with the default lists. They are not versioned.
 
 ## Domains enforced by validation
 

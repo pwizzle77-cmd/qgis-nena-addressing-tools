@@ -80,7 +80,7 @@ class StreetsTab(QWidget):
         b.clicked.connect(lambda *_: self.add_link_fields())
         row.addWidget(b)
         f.addRow("Link field", row)
-        f.addRow(hint("The centerline is the layer at the top of the panel. Address points are on the Addresses tab."))
+        f.addRow(hint("The centerline is the layer at the top of this window. Address points are in the Addresses window."))
         lay.addWidget(g)
 
         # -- uniqueness (shown on Settings) --------------------------------
@@ -178,7 +178,7 @@ class StreetsTab(QWidget):
         s = self.pcfg.streets
         self.cb_master.setLayer(layer_for(s, "master"))
         addr = layer_for(s, "address")
-        self.lbl_addr.setText(addr.name() if addr else "<i>none (Addresses tab)</i>")
+        self.lbl_addr.setText(addr.name() if addr else "<i>none (Addresses window)</i>")
         self.ed_link.setText(s.street_id_field)
         set_combo_data(self.cb_scope, s.scope_mode)
         set_combo_data(self.cb_scope_field, s.scope_field or "MSAGComm_L")
@@ -228,13 +228,14 @@ class StreetsTab(QWidget):
     def service(self) -> StreetService:
         self.store()
         if self.dock.layer is None:
-            raise ConfigError("Choose the centerline layer at the top of the panel first.")
+            raise ConfigError("Choose the centerline layer at the top of the window first.")
         return StreetService(self.pcfg, centerline_layer=self.dock.layer, centerline_cfg=self.dock.collect())
 
     def edit_types(self):
         dlg = StreetTypesDialog(self, self.street_types)
         if dlg.exec():
             self.street_types = dlg.settings()
+            self.dock.autosave()
 
     def _name_dialog(self, title, **kwargs):
         return NameDialog(self, title, street_types=type_list(self.street_types),

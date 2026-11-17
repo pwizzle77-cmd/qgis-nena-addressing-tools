@@ -23,6 +23,12 @@ class ConfigError(Exception):
     """Raised for user-fixable configuration problems (missing mapping etc.)."""
 
 
+def _stores_fraction(type_name: str) -> bool:
+    """True when a numeric field keeps a fractional value (float, double, decimal, …)."""
+    name = (type_name or "").lower()
+    return any(token in name for token in ("float", "real", "double", "decimal", "numeric", "money"))
+
+
 class FieldAccessor:
     """Resolves NENA logical names to layer field indexes and converts values."""
 
@@ -97,7 +103,11 @@ class FieldAccessor:
             return value.isoformat(timespec="seconds")
         if fld.isNumeric():
             try:
-                return int(value) if "real" not in tname and "double" not in tname else float(value)
+                # SQL Server reports float columns as "float", not "double" or "real".
+                # Treating that as a whole number saved longitude -82.65 as -82.
+                if _stores_fraction(tname):
+                    return float(value)
+                return int(value)
             except (TypeError, ValueError):
                 return None
         return str(value)

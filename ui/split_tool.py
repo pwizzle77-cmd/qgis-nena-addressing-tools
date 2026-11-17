@@ -91,7 +91,7 @@ class SplitRerangeTool(QgsMapTool):
             return
         layer, cfg = self.get_target()
         if layer is None:
-            self.notify("Warning", "Choose a centerline layer in the NENA Addressing panel first.")
+            self.notify("Warning", "Choose a centerline layer in a NENA window first.")
             return
         if not layer.isEditable():
             self.notify("Warning", f"Toggle editing on '{layer.name()}' to split features.")

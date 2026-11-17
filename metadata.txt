@@ -10,10 +10,20 @@ about=Datasource-independent NG9-1-1 addressing tools (GeoPackage, PostGIS, SQL 
     interval, proportional or from address points) with parity handling, automatically redistribute ranges
     when a centerline is split or merged, and validate for gaps, overlaps, parity, direction, domain and
     NGUID problems. All edits go through the edit buffer and are undoable. Pure PyQGIS, no extra dependencies.
-version=3.2.10
+version=3.6.3
 author=NENA RCL Tools contributors
 email=noreply@example.com
-changelog=3.2.10 - The readme is a user guide. It explains what each tool does and how the settings work, in plain language.
+changelog=3.6.3 - Place address saves an access point 10 feet straight off the road click, on the building's side, linked to the address and the centerline. The driveway checkbox is removed. Draw driveway remains the tool for the path.
+    3.6.2 - House numbers follow the click from the start of the line. A SQL Server float coordinate was saved as a whole degree, so every existing address looked like it sat at the start of the street and the new number was pushed up to the last house.
+    3.6.1 - One-way tool marks selected centerlines B, FT, or TF for routing; one-way roads show red travel arrows in the NENA style.
+    3.6.0 - House numbers are calculated on the clicked segment (from its From number and first point, or interpolated between its From/To). Odd/even always follows the settings; a disagreeing segment parity is reported. Reverse and re-range uses the parity settings.
+    3.5.2 - Fixed house numbers pushed up by an address on a separate piece of the same street. Fixed a crash when closing QGIS 4 or removing a watched layer. Dialogs use a normal light background.
+    3.5.1 - Fixed left/right in Place units: the first unit click now picks the side and its house number. Building and unit clicks no longer snap onto road lines.
+    3.5.0 - Style NENA layers: roads with direction arrows, green start and red end markers, names and From/To labels; house markers with numbers for address points. Reverse tool flips selected roads and swaps left/right values and ranges so every house keeps its number.
+    3.4.0 - Drop-down lists for county, municipality, communities, ZIP and postal community, ESN, MSAG community, road class, placement, directionals, parity, one-way, country, and state, on both sides of a centerline. Lookup tables window shows every list, creates missing tables, and loads values from your data. Windows use a normal background, remember their size, and can dock. Toolbar has a NENA window menu and labels. Settings save automatically.
+    3.3.1 - Place units keeps the house number from the road click and advances the unit number. The toolbar and menu are split into centerlines and addressing. Tool windows use a normal background.
+    3.3.0 - Access points are stored in their own table and cannot be deleted while an address still uses them. Place units assigns a unit type and the next unit number. Road types, unit types, statuses, and address types are lookup tables. Each tool opens in its own dockable window.
+    3.2.10 - The readme is a user guide. It explains what each tool does and how the settings work, in plain language.
     3.2.9 - Place address, Draw driveway, and Place units are separate tools. A driveway is not created unless you ask for one. Place units numbers several rooftops from one access point. The street-name form uses an editable NENA/USPS street-type list.
     3.2.8 - The panel is organized into Streets, Addresses, Ranges, Check, and Settings. Daily actions stay on the work tabs. Schema, field mapping, sides, defaults, and rules are on Settings. Save at the top stores the panel settings.
     3.2.7 - On a database layer, WhoEntered and LastUpdatedBy use the login from the QGIS connection. WhoEntered is filled only when it is empty. LastUpdatedBy is written on each new or changed feature. Change tracking stores that same login in ChangedBy.

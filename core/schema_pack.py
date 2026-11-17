@@ -3,12 +3,17 @@
 The fresh NENA schema this plugin can create, and the field matching used to
 import existing layers into it.
 
-Plain Python only. The four layers are the ones the plugin edits:
+Plain Python only. The four layers the plugin already edits stay in
+``SCHEMA_LAYERS``:
 
 * road centerlines (NENA-STA-006.2, or the loaded centerline template)
 * master street names (the plugin's street list)
 * site / structure address points (built-in SSAP, or the state template)
 * driveways (the plugin's driveway fields)
+
+``CREATABLE_LAYERS`` adds the access-point table and the lookup tables
+(road type, unit type, address status, road status, address type) and the
+shared domain-values table (counties, communities, ZIP codes, ESNs, …).
 
 Boundary polygons stay the layers you already draw the attribution rules
 from. This plugin does not invent a boundary schema.
@@ -19,15 +24,16 @@ import re
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional, Sequence
 
-from .addressing.ssap import DRIVEWAY_FIELDS, SSAP_FIELDS
+from .addressing.ssap import ACCESS_FIELDS, DRIVEWAY_FIELDS, SSAP_FIELDS
+from .lookups import LOOKUP_SPECS, lookup_field_defs
 from .schema import MANDATORY, OPTIONAL, RCL_FIELDS, FieldDef, auto_map, get_def, normalize_name
 from .template import effective_fields
 
 # Plugin link fields kept when a state template replaces the SSAP list.
 ADDRESS_LINK_FIELDS = ("StreetID", "RCL_NGUID", "Access_X", "Access_Y", "Addr_Side")
-# Full road name is plugin-owned (same column as the master street table) and is kept with a template.
-# WhoEntered and LastUpdatedBy stay too, so a state template still creates the editor columns.
-_ADDRESS_ALWAYS = ADDRESS_LINK_FIELDS + ("FullName", "WhoEntered", "LastUpdatedBy")
+# Full road name, the access-point link, unit/status codes, and the editor columns stay with a template.
+_ADDRESS_ALWAYS = ADDRESS_LINK_FIELDS + (
+    "FullName", "AccessPointID", "UnitType", "AddressStatus", "AddressType", "WhoEntered", "LastUpdatedBy")
 
 MAX_IDENT = 63
 
@@ -39,6 +45,7 @@ class SchemaLayer:
     title: str
     wkb: str          # None | Point | LineString
     role: str         # project-config role, or "centerline" for the panel layer
+    versioned: bool = True
 
 
 SCHEMA_LAYERS: tuple = (
@@ -48,7 +55,15 @@ SCHEMA_LAYERS: tuple = (
     SchemaLayer("driveway", "Driveway", "Driveways", "LineString", "driveway"),
 )
 
-LAYERS_BY_KEY = {s.key: s for s in SCHEMA_LAYERS}
+# Access points and lookup lists are created with the schema. They are not part of
+# SCHEMA_LAYERS, so the original four live layers keep their archive pairing.
+ACCESS_LAYER = SchemaLayer("access", "AccessPoint", "Access points", "Point", "access")
+LOOKUP_LAYERS: tuple = tuple(
+    SchemaLayer(key, table, title, "None", role, False) for key, table, title, role in LOOKUP_SPECS)
+EXTRA_LAYERS: tuple = (ACCESS_LAYER,) + LOOKUP_LAYERS
+CREATABLE_LAYERS: tuple = SCHEMA_LAYERS + EXTRA_LAYERS
+
+LAYERS_BY_KEY = {s.key: s for s in CREATABLE_LAYERS}
 
 # Plugin columns on a version table. These are not NENA-STA-006 fields.
 # ChangeType is insert, update, or delete. ArchiveID is the id of one version row.
@@ -167,6 +182,10 @@ def driveway_defs() -> List[FieldDef]:
     return list(DRIVEWAY_FIELDS)
 
 
+def access_defs() -> List[FieldDef]:
+    return list(ACCESS_FIELDS)
+
+
 def defs_for(key: str, rcl_template: Optional[dict] = None, addr_template: Optional[dict] = None) -> List[FieldDef]:
     if key == "centerline":
         return centerline_defs(rcl_template)
@@ -176,6 +195,10 @@ def defs_for(key: str, rcl_template: Optional[dict] = None, addr_template: Optio
         return address_defs(addr_template)
     if key == "driveway":
         return driveway_defs()
+    if key == "access":
+        return access_defs()
+    if key in {spec[0] for spec in LOOKUP_SPECS}:
+        return lookup_field_defs(key)
     raise KeyError(key)
 
 

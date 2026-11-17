@@ -3,27 +3,31 @@
 Map tools for addresses and driveways.
 
 Place address: click the centerline (or an existing driveway) for the access
-point, then click the rooftop. A driveway is not drawn unless Shift is held
-or the dialog checkbox is on.
+point, then click the rooftop. The access point is stored 10 feet straight
+off the road click. A driveway is not drawn.
 
 Draw driveway: click the access point, optional bends, then right-click or
 double-click to finish. The line can later be shared by address points.
 
-Place units: one access click, then a rooftop click per unit. Right-click or
-Esc ends that access. A small panel chooses the numbering.
+Place units: one click on the road takes the house number. Each later click
+is another unit under that roof. The house number stays. The unit number
+changes. Right-click or Esc ends that roof.
 """
 
 from qgis.core import QgsGeometry, QgsPointLocator, QgsPointXY
 from qgis.gui import QgsMapTool, QgsRubberBand, QgsSnapIndicator, QgsVertexMarker
 from qgis.PyQt.QtCore import Qt, pyqtSignal
 from qgis.PyQt.QtGui import QColor
-from qgis.PyQt.QtWidgets import (QCheckBox, QComboBox, QFormLayout, QFrame, QLabel, QLineEdit, QSpinBox,
-                                 QVBoxLayout)
+from qgis.PyQt.QtWidgets import (QCheckBox, QComboBox, QFormLayout, QLabel, QLineEdit,
+                                 QSpinBox, QVBoxLayout)
+
+from .widgets import Surface, apply_panel_fill
 
 from ..compat import geometry_type_line
 from ..core.addressing import engine as E
-from ..core.addressing.units import next_unit, preview
+from ..core.addressing.units import next_unit
 from ..core.layer_access import ConfigError
+from ..core.lookups import unit_type_choices
 from .address_dialogs import AddressDialog
 
 
@@ -77,8 +81,16 @@ class _AccessTool(QgsMapTool):
         self.band.reset(geometry_type_line())
         self.marker.hide()
 
-    def _layer_pt(self, event):
+    def _layer_pt(self, event, building=False):
+        """The click in centerline coordinates, snapped by the QGIS snapping settings.
+
+        A building (rooftop or unit) click never snaps onto a road: a point pulled
+        onto the centerline has no side, and one pulled onto a cross street at an
+        intersection would be measured from the wrong road.
+        """
         match = self.canvas().snappingUtils().snapToMap(event.mapPoint())
+        if building and match.isValid() and self.ctx is not None and match.layer() is self.ctx.rcl:
+            match = QgsPointLocator.Match()
         self.snap.setMatch(match)
         mp = match.point() if match.isValid() else event.mapPoint()
         return self.toLayerCoordinates(self.ctx.rcl, mp)
@@ -167,7 +179,7 @@ class _AccessTool(QgsMapTool):
 
 
 class AddressTool(_AccessTool):
-    """Click the access point, then the rooftop. Shift draws a straight driveway."""
+    """Click the road, then the rooftop. The access point is saved 10 feet off the road."""
 
     def __init__(self, canvas, get_context, notify, on_created=None):
         super().__init__(canvas, get_context, notify, QColor(30, 110, 220))
@@ -176,7 +188,7 @@ class AddressTool(_AccessTool):
     def canvasMoveEvent(self, event):  # noqa: N802
         if self.ctx is None:
             return
-        pt = self._layer_pt(event)
+        pt = self._layer_pt(event, building=bool(self.points))
         if not self.points:
             self._hover_access(pt)
             return
@@ -188,7 +200,7 @@ class AddressTool(_AccessTool):
             return
         if not self._ensure_context():
             return
-        pt = self._layer_pt(event)
+        pt = self._layer_pt(event, building=bool(self.points))
         if event.button() == Qt.MouseButton.RightButton:
             if self.points:
                 self._reset()
@@ -200,8 +212,7 @@ class AddressTool(_AccessTool):
         if not self.points:
             self._take_access(pt)
             return
-        straight = bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
-        self._finish(pt, straight)
+        self._finish(pt)
 
     def keyPressEvent(self, event):  # noqa: N802
         if event.key() == Qt.Key.Key_Escape:
@@ -217,7 +228,7 @@ class AddressTool(_AccessTool):
             return
         event.ignore()
 
-    def _finish(self, rooftop, straight):
+    def _finish(self, rooftop):
         access = self.points[0]
         try:
             plan = E.plan_address(self.ctx, access, rooftop, [], self.segment_fid,
@@ -227,22 +238,33 @@ class AddressTool(_AccessTool):
             self._reset()
             return
         a = self.ctx.pcfg.addresses
-        want = True if straight else a.create_driveway
-        dlg = AddressDialog(self.canvas().window(), plan, a.placement, self.ctx.dw is not None, want)
+        dlg = AddressDialog(self.canvas().window(), plan, a.placement, False, False,
+                            unit_type_choices(self.ctx.pcfg))
         if dlg.exec():
             v = dlg.values()
             try:
                 ids = E.commit_address(self.ctx, plan, v["number"], v["suffix"], v["unit"], v["placement"],
-                                       v["create_driveway"])
+                                       False, unit_type=v.get("unit_type") or "")
             except ConfigError as exc:
                 self.notify("Warning", str(exc))
             else:
-                tail = " with a straight driveway." if "driveway" in ids else "."
-                self.notify("Success", f"Address {v['number']}{v['suffix']} {plan.full_name} created{tail}")
+                self.notify("Success", f"Address {v['number']}{v['suffix']} {plan.full_name} created."
+                            + self._access_note(ids))
                 self.ctx.addr.triggerRepaint()
+                if self.ctx.access is not None:
+                    self.ctx.access.triggerRepaint()
                 if self.on_created:
                     self.on_created(ids)
         self._reset()
+
+    def _access_note(self, ids):
+        if ids.get("access_created"):
+            return " An access point was saved 10 feet off the road, linked to this address and the centerline."
+        if ids.get("access"):
+            return " It uses the access point already there."
+        if self.ctx.access is None:
+            return " Choose an access-point layer in the Addresses window to store the access point."
+        return ""
 
 
 class DrawDrivewayTool(_AccessTool):
@@ -310,7 +332,7 @@ class DrawDrivewayTool(_AccessTool):
 
     def _finish(self, end):
         if self.ctx.dw is None:
-            self.notify("Warning", "Choose a driveway layer on the Addresses tab first.")
+            self.notify("Warning", "Choose a driveway layer in the Addresses window first.")
             self._reset()
             return
         try:
@@ -327,35 +349,48 @@ class DrawDrivewayTool(_AccessTool):
         self._reset()
 
 
-class UnitsPanel(QFrame):
-    """Base number, numbering scheme, and the next unit. Floats over the map."""
+class UnitsPanel(Surface):
+    """House number, unit type, and the next unit. A normal window, not a dock."""
 
     sessionEnd = pyqtSignal()
 
     def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowFlags(Qt.WindowType.Tool)
+        flags = Qt.WindowType.Window | Qt.WindowType.WindowCloseButtonHint
+        super().__init__(parent, flags)
+        self.setObjectName("NenaPlaceUnitsWindow")
         self.setWindowTitle("Place units")
-        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
-        self.setAutoFillBackground(True)
-        self.setFrameShape(QFrame.Shape.Panel)
-        self.setFrameShadow(QFrame.Shadow.Raised)
+        self.setAttribute(Qt.WidgetAttribute.WA_QuitOnClose, False)
         self.index = 0
+        self.house_touched = False
+        self._setting_base = False
         lay = QVBoxLayout(self)
         lay.setContentsMargins(8, 8, 8, 8)
         form = QFormLayout()
+        self.cb_type = QComboBox()
+        self.cb_type.setToolTip("Unit type from the Unit Type list. The address stores the code.")
+        form.addRow("Unit type", self.cb_type)
         self.sp_base = QSpinBox()
         self.sp_base.setRange(0, 9999999)
-        self.sp_base.setSpecialValueText("from first rooftop")
-        self.sp_base.setToolTip("Street number shared by these units. 0 uses the number calculated for the first rooftop.")
-        self.sp_base.valueChanged.connect(self._refresh)
-        form.addRow("Base number", self.sp_base)
+        self.sp_base.setSpecialValueText("click the road")
+        self.sp_base.setToolTip("House number from the road click. Every unit under this roof keeps it. "
+                                "Change it here if this roof needs a different number.")
+        self.sp_base.valueChanged.connect(self._base_edited)
+        form.addRow("House number", self.sp_base)
         self.cb_scheme = QComboBox()
-        self.cb_scheme.addItem("101, 102, 103", "increment")
+        self.cb_scheme.addItem("1, 2, 3", "unit")
+        self.cb_scheme.addItem("101, 102, 103", "unit101")
+        self.cb_scheme.addItem("A, B, C", "alpha")
+        self.cb_scheme.addItem("1A, 1B, 1C", "pair")
         self.cb_scheme.addItem("101A, 101B, 101C", "letter")
-        self.cb_scheme.addItem("1, 2, 3  or  Unit 1", "unit")
+        self.cb_scheme.addItem("Building + unit", "building")
         self.cb_scheme.currentIndexChanged.connect(self._scheme)
-        form.addRow("Numbering", self.cb_scheme)
+        form.addRow("Unit numbers", self.cb_scheme)
+        self.ed_building = QLineEdit()
+        self.ed_building.setPlaceholderText("1")
+        self.ed_building.setToolTip("Building id stored on every unit in this session. The unit number still changes.")
+        self.ed_building.textChanged.connect(self._refresh)
+        self.lbl_building = QLabel("Building")
+        form.addRow(self.lbl_building, self.ed_building)
         self.ed_prefix = QLineEdit()
         self.ed_prefix.setPlaceholderText("Unit ")
         self.ed_prefix.setToolTip("Text before the unit number. Leave it empty for 1, 2, 3. Type Unit and a space for Unit 1.")
@@ -365,7 +400,8 @@ class UnitsPanel(QFrame):
         self.sp_start = QSpinBox()
         self.sp_start.setRange(1, 9999)
         self.sp_start.setValue(1)
-        self.sp_start.setToolTip("First unit number, or the first letter (1 = A).")
+        self.sp_start.setToolTip("First unit number, or the first letter (1 = A). 101, 102, 103 starts at 101. "
+                                 "The house number does not change.")
         self.sp_start.valueChanged.connect(self._refresh)
         form.addRow("Start at", self.sp_start)
         lay.addLayout(form)
@@ -373,51 +409,121 @@ class UnitsPanel(QFrame):
         self.lbl_next.setWordWrap(True)
         lay.addWidget(self.lbl_next)
         self.chk_dw = QCheckBox("Straight driveway for each unit")
-        self.chk_dw.setToolTip("Off by default. Most multi-unit sites share the access point and do not need a new line.")
+        self.chk_dw.setToolTip("Off by default. Units under one roof share the access point.")
         lay.addWidget(self.chk_dw)
         self._scheme()
+        self.resize(340, 260)
 
-    def begin(self, canvas, create_driveway, driveway_available):
+    def set_unit_types(self, pairs):
+        current = self.cb_type.currentData()
+        self.cb_type.clear()
+        self.cb_type.addItem("", "")
+        for code, label in pairs or ():
+            self.cb_type.addItem(str(label), str(code))
+        index = self.cb_type.findData(current)
+        if index < 0 and self.cb_type.count() > 1:
+            index = 1
+        if index >= 0:
+            self.cb_type.setCurrentIndex(index)
+
+    def set_side_numbers(self, left, right):
+        """Before the first unit: show both possible house numbers in the empty box."""
+        bits = [f"L {left}" if left else "", f"R {right}" if right else ""]
+        text = " / ".join(b for b in bits if b)
+        self.sp_base.setSpecialValueText(f"{text} – click a unit" if text else "click the road")
+        self.house_touched = False
+        self.set_base(0)
+
+    def begin(self, canvas, create_driveway, driveway_available, unit_types=()):
         self.index = 0
-        self.sp_base.setValue(0)
+        self.house_touched = False
+        self.sp_base.setSpecialValueText("click the road")
+        self.set_unit_types(unit_types)
+        self.set_base(0)
         self.chk_dw.setChecked(bool(create_driveway) and driveway_available)
         self.chk_dw.setEnabled(driveway_available)
         self._refresh()
-        self.adjustSize()
-        origin = canvas.mapToGlobal(canvas.rect().topLeft())
-        self.move(origin.x() + 16, origin.y() + 16)
         self.show()
         self.raise_()
+        self.activateWindow()
+
+    def showEvent(self, event):  # noqa: N802
+        apply_panel_fill(self)
+        super().showEvent(event)
 
     def end(self):
         self.hide()
 
+    def closeEvent(self, event):  # noqa: N802
+        event.ignore()
+        self.hide()
+        self.sessionEnd.emit()
+
     def note_placed(self):
         self.index += 1
+        self.house_touched = True
         self._refresh()
 
+    def _scheme_name(self):
+        raw = self.cb_scheme.currentData() or "unit"
+        return "unit" if raw == "unit101" else raw
+
     def values(self):
-        return dict(scheme=self.cb_scheme.currentData(), base=self.sp_base.value(),
+        scheme = self._scheme_name()
+        number, suffix, unit = (0, "", "")
+        if self.sp_base.value() > 0:
+            number, suffix, unit = next_unit(scheme, self.index, self.sp_base.value(),
+                                             self.ed_prefix.text(), self.sp_start.value())
+        building = self.ed_building.text().strip() if scheme == "building" else ""
+        shown = self._shown(scheme, number, suffix, unit)
+        if building and self.sp_base.value() > 0:
+            shown = f"{building} / {shown}"
+        return dict(scheme=scheme, base=self.sp_base.value(),
                     prefix=self.ed_prefix.text(), start=self.sp_start.value(),
-                    index=self.index, create_driveway=self.chk_dw.isChecked())
+                    index=self.index, create_driveway=self.chk_dw.isChecked(),
+                    unit_type=self.cb_type.currentData() or "", building=building, shown=shown)
+
+    def _shown(self, scheme, number, suffix, unit):
+        if self.sp_base.value() <= 0:
+            return "Click the road"
+        kind = self.cb_type.currentText().strip()
+        if scheme == "letter":
+            return f"{number}{suffix}"
+        if scheme == "alpha":
+            text = f"{number} {unit}".strip()
+        else:
+            text = f"{number} {unit}".strip()
+        if kind and scheme != "letter":
+            text = f"{number} {kind} {unit}".strip()
+        return text
 
     def set_base(self, number):
-        self.sp_base.setValue(int(number))
+        self._setting_base = True
+        try:
+            self.sp_base.setValue(int(number))
+        finally:
+            self._setting_base = False
+        self._refresh()
+
+    def _base_edited(self, *_args):
+        if not self._setting_base:
+            self.house_touched = True
+        self._refresh()
 
     def _scheme(self, *_args):
-        unit = self.cb_scheme.currentData() == "unit"
-        self.lbl_prefix.setVisible(unit)
-        self.ed_prefix.setVisible(unit)
+        raw = self.cb_scheme.currentData()
+        unit_numbers = raw in ("unit", "unit101")
+        self.lbl_prefix.setVisible(unit_numbers)
+        self.ed_prefix.setVisible(unit_numbers)
+        self.lbl_building.setVisible(raw == "building")
+        self.ed_building.setVisible(raw == "building")
+        if raw == "unit101" and self.sp_start.value() < 100:
+            self.sp_start.setValue(101)
         self._refresh()
 
     def _refresh(self, *_args):
         v = self.values()
-        if v["base"] <= 0:
-            shown = "(first rooftop)"
-        else:
-            number, suffix, unit = next_unit(v["scheme"], v["index"], v["base"], v["prefix"], v["start"])
-            shown = preview(v["scheme"], number, suffix, unit)
-        self.lbl_next.setText(f"Next: {shown}    Placed: {self.index}")
+        self.lbl_next.setText(f"Next: {v['shown']}    Placed: {self.index}")
 
     def keyPressEvent(self, event):  # noqa: N802
         if event.key() == Qt.Key.Key_Escape:
@@ -435,16 +541,19 @@ class PlaceUnitsTool(_AccessTool):
         self.on_created = on_created
         self.panel = UnitsPanel(canvas.window())
         self.panel.sessionEnd.connect(self._end_session)
+        self._side_numbers = {}
+        self._base_side = ""
 
     def _reset(self):
         super()._reset()
+        self._side_numbers, self._base_side = {}, ""
         if getattr(self, "panel", None) is not None:
             self.panel.end()
 
     def canvasMoveEvent(self, event):  # noqa: N802
         if self.ctx is None:
             return
-        pt = self._layer_pt(event)
+        pt = self._layer_pt(event, building=bool(self.points))
         if not self.points:
             self._hover_access(pt)
             return
@@ -453,7 +562,7 @@ class PlaceUnitsTool(_AccessTool):
     def canvasReleaseEvent(self, event):  # noqa: N802
         if not self._ensure_context():
             return
-        pt = self._layer_pt(event)
+        pt = self._layer_pt(event, building=bool(self.points))
         if event.button() == Qt.MouseButton.RightButton:
             if self.points:
                 self._end_session()
@@ -464,8 +573,9 @@ class PlaceUnitsTool(_AccessTool):
             return
         if not self.points:
             if self._take_access(pt):
-                a = self.ctx.pcfg.addresses
-                self.panel.begin(self.canvas(), a.create_driveway, self.ctx.dw is not None)
+                self.panel.begin(self.canvas(), False, self.ctx.dw is not None,
+                                 unit_type_choices(self.ctx.pcfg))
+                self._lock_house_number(pt)
             return
         self._place(pt)
 
@@ -482,6 +592,22 @@ class PlaceUnitsTool(_AccessTool):
             return
         self._reset()
 
+    def _lock_house_number(self, _hint=None):
+        """Work out the house number on both sides. The first unit click picks the side."""
+        self._side_numbers, self._base_side = {}, ""
+        try:
+            numbers = E.house_numbers_by_side(self.ctx, self.segment_fid, self.points[0], self.parent_dw)
+        except ConfigError as exc:
+            self.notify("Warning", f"{exc} Type the house number in the Place units window.")
+            return
+        self._side_numbers = numbers
+        self.panel.set_side_numbers(numbers.get("L"), numbers.get("R"))
+        left, right = numbers.get("L"), numbers.get("R")
+        shown = " and ".join(t for t in (f"{left} on the left" if left else "",
+                                          f"{right} on the right" if right else "") if t)
+        self.notify("Info", f"House number here: {shown or 'none'}. Click the first unit. "
+                            "Its side of the road picks the house number, and every unit keeps it.")
+
     def _place(self, rooftop):
         access = self.points[0]
         try:
@@ -490,25 +616,38 @@ class PlaceUnitsTool(_AccessTool):
         except ConfigError as exc:
             self.notify("Warning", str(exc))
             return
+        side_name = "left" if plan.side == "L" else "right"
+        if not self.panel.house_touched and self._base_side != plan.side:
+            number = self._side_numbers.get(plan.side)
+            if not number and plan.result.number is not None and not plan.result.needs_choice:
+                number = int(plan.result.number)
+            if number:
+                if self._base_side and self.panel.index:
+                    self.notify("Warning", f"This unit is across the road from the last one, so it takes the "
+                                           f"{side_name}-side house number {number}.")
+                self.panel.set_base(number)
+                self._base_side = plan.side
         v = self.panel.values()
+        if v["base"] > 0 and not E.parity_matches(v["base"], plan.parity):
+            want = "odd" if plan.parity == "O" else "even"
+            self.notify("Warning", f"House number {v['base']} is not {want}, but this unit is on the {side_name} "
+                                   f"side of the road, which takes {want} numbers. Check the number in the "
+                                   "Place units window.")
         base = v["base"]
         if base <= 0:
-            if plan.result.number is None or plan.result.needs_choice:
-                self.notify("Warning", "This rooftop needs a number choice. Set the base number in the "
-                                       "Place units panel, or use Place address for this one.")
-                return
-            base = plan.result.number
-            self.panel.set_base(base)
-            v = self.panel.values()
+            self.notify("Warning", "Type the house number in the Place units window, then click the unit again.")
+            return
         number, suffix, unit = next_unit(v["scheme"], v["index"], base, v["prefix"], v["start"])
         try:
             ids = E.commit_address(self.ctx, plan, number, suffix, unit, self.ctx.pcfg.addresses.placement,
-                                   v["create_driveway"])
+                                   v["create_driveway"], unit_type=v["unit_type"], building=v["building"])
         except ConfigError as exc:
             self.notify("Warning", str(exc))
             return
+        label = self.panel._shown(v["scheme"], number, suffix, unit)
+        if v["building"]:
+            label = f"{v['building']} / {label}"
         self.panel.note_placed()
-        label = preview(v["scheme"], number, suffix, unit)
         self.notify("Success", f"Address {label} {plan.full_name} created.")
         self.ctx.addr.triggerRepaint()
         if self.on_created:

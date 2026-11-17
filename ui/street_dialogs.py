@@ -12,7 +12,7 @@ from ..core.project_config import StreetTypeSettings
 from ..core.schema import DIRECTIONAL_DOMAIN
 from ..core.streets import names as N
 from ..core.streets.street_types import OFFICIAL_TYPES, display_type, type_list
-from .widgets import hint
+from .widgets import NormalDialog, hint
 
 PART_LABELS = {
     "St_PreMod": "Pre modifier", "St_PreDir": "Pre directional", "St_PreTyp": "Pre type",
@@ -21,7 +21,7 @@ PART_LABELS = {
 }
 
 
-class NameDialog(QDialog):
+class NameDialog(NormalDialog):
     """Enter or change a road name; shows the full name and uniqueness conflicts live."""
 
     def __init__(self, parent, title, parts=None, scope="", scope_enabled=False, check=None,
@@ -134,7 +134,7 @@ class NameDialog(QDialog):
         ok_btn.setEnabled(not blocking)
 
 
-class BuildDialog(QDialog):
+class BuildDialog(NormalDialog):
     """Review the names found on the centerlines before building the master list."""
 
     def __init__(self, parent, report):
@@ -192,7 +192,7 @@ class BuildDialog(QDialog):
         parent.setText(0, g.label(g.chosen))
 
 
-class IssuesDialog(QDialog):
+class IssuesDialog(NormalDialog):
     """Name-check results across the master table, centerlines and address points."""
     selectRequested = pyqtSignal(str, list)     # role, fids
 
@@ -237,7 +237,7 @@ class IssuesDialog(QDialog):
             self.selectRequested.emit(role, fids)
 
 
-class StreetTypesDialog(QDialog):
+class StreetTypesDialog(NormalDialog):
     """Edit the street-type list and local abbreviations stored in the project."""
 
     def __init__(self, parent, settings):
@@ -249,7 +249,7 @@ class StreetTypesDialog(QDialog):
             "These are the full spellings offered for pre type and post type. "
             "Abbreviations such as St and GLN still match the spelled form when names are checked. "
             "A type you type once in the name form is not added here. "
-            "Click Save at the top of the panel to keep this list in the project."))
+            "The list is saved in the project when you click OK."))
         self.lst = QListWidget()
         self.lst.addItems(type_list(settings))
         lay.addWidget(self.lst, 1)

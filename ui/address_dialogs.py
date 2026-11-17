@@ -3,18 +3,21 @@
 
 from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtGui import QGuiApplication
-from qgis.PyQt.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout,
+from qgis.PyQt.QtWidgets import (QAbstractItemView, QComboBox, QDialog, QDialogButtonBox, QFormLayout,
                                  QHBoxLayout, QHeaderView, QLabel, QLineEdit, QPlainTextEdit, QPushButton,
                                  QSpinBox, QTableWidget, QTableWidgetItem, QVBoxLayout)
 
 from ..core.addressing.ssap import PLACEMENT_VALUES
-from .widgets import hint
+from .widgets import NormalDialog, hint
 
 
-class AddressDialog(QDialog):
+class AddressDialog(NormalDialog):
     """Review the calculated address before it is written."""
 
-    def __init__(self, parent, plan, placement="Structure", driveway_available=True, create_driveway=False):
+    def __init__(self, parent, plan, placement="Structure", _driveway_available=True, _create_driveway=False,
+                 unit_types=()):
+        # The extra arguments stay so older callers still load.
+        # Place address does not draw a driveway. Draw driveway is its own tool.
         super().__init__(parent)
         self.setWindowTitle("New address")
         self.plan = plan
@@ -23,7 +26,7 @@ class AddressDialog(QDialog):
         side = "left" if plan.side == "L" else "right"
         lay.addWidget(QLabel(f"<b>{res.label or '?'} {plan.full_name}</b>"))
         lay.addWidget(hint(f"{side} side ({'odd' if plan.parity == 'O' else 'even' if plan.parity == 'E' else 'any'})"
-                           f", {plan.distance_m:.0f} m from the start of the street"
+                           f", {plan.distance_m:.0f} m from the start of this segment"
                            + (f" (raw {res.raw:.1f})" if res.raw is not None else "")))
         form = QFormLayout()
         row = QHBoxLayout()
@@ -44,18 +47,17 @@ class AddressDialog(QDialog):
         row.addWidget(self.ed_suffix)
         row.addWidget(self.cb_choice)
         form.addRow("Number", row)
+        self.cb_unit_type = QComboBox()
+        self.cb_unit_type.addItem("", "")
+        for code, label in unit_types or ():
+            self.cb_unit_type.addItem(label, code)
+        form.addRow("Unit type", self.cb_unit_type)
         self.ed_unit = QLineEdit()
         form.addRow("Unit", self.ed_unit)
         self.cb_place = QComboBox()
         self.cb_place.addItems(PLACEMENT_VALUES)
         self.cb_place.setCurrentText(placement)
         form.addRow("Placement", self.cb_place)
-        self.chk_dw = QCheckBox("Draw a straight driveway")
-        self.chk_dw.setChecked(create_driveway and driveway_available)
-        self.chk_dw.setEnabled(driveway_available)
-        self.chk_dw.setToolTip("Off unless you held Shift or turned this on. Draw driveway is the tool for a real path."
-                               if driveway_available else "Choose a driveway layer on the Addresses tab.")
-        form.addRow(self.chk_dw)
         lay.addLayout(form)
         if plan.community:
             lay.addWidget(hint("Community fields: " + ", ".join(f"<b>{k}</b> {v}" for k, v in plan.community.items())))
@@ -75,11 +77,12 @@ class AddressDialog(QDialog):
 
     def values(self):
         return dict(number=self.sp_number.value(), suffix=self.ed_suffix.text().strip().upper(),
-                    unit=self.ed_unit.text().strip(), placement=self.cb_place.currentText(),
-                    create_driveway=self.chk_dw.isChecked())
+                    unit=self.ed_unit.text().strip(), unit_type=self.cb_unit_type.currentData() or "",
+                    placement=self.cb_place.currentText(),
+                    create_driveway=False)
 
 
-class ReaddressDialog(QDialog):
+class ReaddressDialog(NormalDialog):
     """Part of a road was renamed: keep numbers, re-address all, or only the ticked addresses."""
     KEEP, ALL, TICKED = 0, 1, 2
 
@@ -133,7 +136,7 @@ class ReaddressDialog(QDialog):
         return out
 
 
-class SqlDialog(QDialog):
+class SqlDialog(NormalDialog):
     """Show database-integrity SQL; copy it or run it on the database."""
 
     def __init__(self, parent, sql, can_run):

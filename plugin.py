@@ -7,14 +7,17 @@ and the edit watchers that re-range centerlines after split / merge.
 """
 
 from qgis.PyQt.QtCore import QSize, Qt, QTimer
-from qgis.PyQt.QtWidgets import QSizePolicy, QWidget
+from qgis.PyQt.QtGui import QIcon
+from qgis.PyQt.QtWidgets import QMenu, QSizePolicy, QToolButton, QWidget
 
 from .compat import QAction, msg_level
+from .core.access_guard import AccessGuard
 from .core.archive_watch import ArchiveWatcher
 from .core.editor_user import EditorUserWatcher
 from .core.split_handler import WatcherManager
 from .core.streets.sync import StreetWatcherManager
 from .ui.dock import NenaDock, TITLE
+from .ui.windows import WindowHost
 from .ui.split_tool import SplitRerangeTool
 from .ui.address_tool import AddressTool, DrawDrivewayTool, PlaceUnitsTool
 from .ui.address_overlay import AddressOverlay
@@ -46,7 +49,10 @@ class NenaRclPlugin:
         self.iface = iface
         self.actions = []
         self.toolbar = None
+        self.menu = None
         self.dock = None
+        self.windows = None
+        self.access_guard = None
         self.watchers = None
         self.street_watchers = None
         self.editor_watchers = None
@@ -63,6 +69,8 @@ class NenaRclPlugin:
         self.toolbar.setObjectName("NenaRclToolsToolbar")   # kept so QGIS remembers the toolbar position
         self.toolbar.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.toolbar.setMovable(True)
+        # Short names under the icons, so nothing needs a hover to explain it.
+        self.toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
         self._toolbar_spacer = _ToolbarSpacer(self.toolbar)
         self.toolbar.addWidget(self._toolbar_spacer)
 
@@ -71,36 +79,83 @@ class NenaRclPlugin:
         # Connect before the version watcher so a save records the login that was just stamped.
         self.editor_watchers = EditorUserWatcher(self._notify)
         self.archive_watchers = ArchiveWatcher(self._notify)
+        self.access_guard = AccessGuard(self._notify)
 
-        self.act_panel = self._add_action("icon.svg", "NENA Addressing panel", self.toggle_panel, checkable=True)
-        self.act_schema = self._add_menu_action("icon.svg", "Create NENA schema…",
-                                               lambda *_: self._dock().create_schema())
-        self.act_import = self._add_menu_action("mapping.svg", "Import into NENA schema…",
-                                               lambda *_: self._dock().import_schema())
-        self.act_archive = self._add_menu_action("icon.svg", "Create version tables…",
-                                                lambda *_: self._dock().create_archive_schema())
-        self.act_streets = self._add_action("streets.svg", "Master street names",
-                                            lambda *_: self.show_tab("streets"))
-        self.act_address = self._add_action("address.svg", "Place address (click road, then rooftop)",
-                                            self.activate_address_tool, checkable=True, use_toggled=False)
-        self.act_driveway = self._add_action("driveway.svg", "Draw driveway (click road, then the path)",
-                                             self.activate_driveway_tool, checkable=True, use_toggled=False)
-        self.act_units = self._add_action("units.svg", "Place units (one access, many rooftops)",
-                                          self.activate_units_tool, checkable=True, use_toggled=False)
-        self.act_undo_addr = self._add_action("undo_address.svg", "Undo last address",
-                                              lambda *_: self._undo_address())
-        self.act_range = self._add_action("range.svg", "Auto-range selected centerlines",
-                                          lambda *_: self._dock().run_ranging(True))
-        self.act_redistribute = self._add_action("redistribute.svg", "Redistribute ranges across selected segments",
-                                                 lambda *_: self._dock().redistribute_selected())
+        self._menu_groups = {"windows": [], "centerline": [], "addressing": [], "setup": []}
+
+        # Windows: one labelled "NENA" drop-down, so no window button shares a picture with a tool.
+        self.act_streets = self._add_menu_action("streets.svg", "Streets",
+                                                 lambda *_: self.show_tab("streets"), "windows")
+        self.act_addresses = self._add_menu_action("", "Addresses",
+                                                   lambda *_: self.show_tab("addresses"), "windows")
+        self.act_ranges = self._add_menu_action("", "Ranges",
+                                                lambda *_: self.show_tab("ranges"), "windows")
+        self.act_check = self._add_menu_action("", "Check",
+                                               lambda *_: self.show_tab("validation"), "windows")
+        self.act_lookups = self._add_menu_action("lookups.svg", "Lookup tables (drop-down lists)",
+                                                 lambda *_: self.show_tab("lookups"), "windows")
+        self.act_schema_window = self._add_menu_action("schema.svg", "Schema and import",
+                                                       lambda *_: self.show_tab("schema"), "windows")
+        self.act_settings = self._add_menu_action("settings.svg", "Settings",
+                                                  lambda *_: self.show_tab("settings"), "windows")
+        self.act_docked = QAction("Dock the NENA windows in the side panel", self.iface.mainWindow())
+        self.act_docked.setCheckable(True)
+        self.act_docked.setToolTip("Open the NENA windows as tabs beside the catalog instead of as "
+                                   "separate windows")
+        from .ui.windows import docked_preference
+        self.act_docked.setChecked(docked_preference())
+        self.act_docked.toggled.connect(self._set_docked)
+        self.actions.append(self.act_docked)
+        self._windows_button_slot = self.toolbar.addSeparator()
+
+        # Centerline tools
         self.act_split_tool = self._add_action("split_tool.svg", "Split && Re-range tool (click a centerline)",
-                                               self.activate_split_tool, checkable=True, use_toggled=False)
+                                               self.activate_split_tool, "centerline", checkable=True,
+                                               use_toggled=False, short="Split")
         self.act_auto = self._add_action("split.svg", "Auto re-range after split/merge (current layer)",
-                                         self.toggle_auto, checkable=True)
+                                         self.toggle_auto, "centerline", checkable=True, short="Auto re-range")
+        self.act_range = self._add_action("range.svg", "Auto-range selected centerlines",
+                                          lambda *_: self._dock().run_ranging(True), "centerline",
+                                          short="Range")
+        self.act_redistribute = self._add_action("redistribute.svg", "Redistribute ranges across selected segments",
+                                                 lambda *_: self._dock().redistribute_selected(), "centerline",
+                                                 short="Redistribute")
         self.act_validate = self._add_action("validate.svg", "Validate centerline layer",
-                                             lambda *_: self._dock().run_validation(False))
+                                             lambda *_: self._dock().run_validation(False), "centerline",
+                                             short="Validate")
+        self.act_reverse = self._add_action("reverse.svg",
+                                            "Reverse the direction of the selected centerlines (sides and ranges "
+                                            "follow, so every house keeps its number)",
+                                            lambda *_: self._dock().reverse_selected(), "centerline",
+                                            short="Reverse")
+        self._add_one_way_button()
         self.act_overlaps = self._add_action("overlaps.svg", "Find && select overlapping address ranges",
-                                             lambda *_: self._dock().find_overlaps(False))
+                                             lambda *_: self._dock().find_overlaps(False), "centerline",
+                                             short="Overlaps")
+        self._toolbar_separator()
+        # Addressing tools
+        self.act_address = self._add_action("address.svg", "Place address (click road, then rooftop)",
+                                            self.activate_address_tool, "addressing", checkable=True,
+                                            use_toggled=False, short="Address")
+        self.act_driveway = self._add_action("driveway.svg", "Draw driveway (click road, then the path)",
+                                             self.activate_driveway_tool, "addressing", checkable=True,
+                                             use_toggled=False, short="Driveway")
+        self.act_units = self._add_action("units.svg", "Place units (one house number, many units)",
+                                          self.activate_units_tool, "addressing", checkable=True,
+                                          use_toggled=False, short="Units")
+        self.act_undo_addr = self._add_action("undo_address.svg", "Undo last address",
+                                              lambda *_: self._undo_address(), "addressing", short="Undo")
+        # Setup (menus only)
+        self.act_style = self._add_menu_action("style.svg", "Style NENA layers (roads, addresses, driveways)",
+                                               lambda *_: self._dock().style_layers(), "setup")
+        self.act_schema = self._add_menu_action("schema.svg", "Create NENA schema…",
+                                                lambda *_: self._dock().create_schema(), "setup")
+        self.act_import = self._add_menu_action("", "Import into NENA schema…",
+                                                lambda *_: self._dock().import_schema(), "setup")
+        self.act_archive = self._add_menu_action("", "Create version tables…",
+                                                 lambda *_: self._dock().create_archive_schema(), "setup")
+        self._add_windows_button(before=self._windows_button_slot)
+        self._build_menu()
 
         self.split_tool = SplitRerangeTool(self.iface.mapCanvas(), self._split_target, self._notify)
         self.split_tool.setAction(self.act_split_tool)
@@ -126,6 +181,7 @@ class NenaRclPlugin:
             self.iface.initializationCompleted.connect(self._place_toolbar_soon)
         except (TypeError, RuntimeError):
             pass
+        self._dock()
 
     def unload(self):
         try:
@@ -158,17 +214,29 @@ class NenaRclPlugin:
             self.split_tool.cleanup()
             self.split_tool = None
         for a in self.actions:
-            self.iface.removePluginVectorMenu(MENU, a)
             self.iface.removeToolBarIcon(a)
         self.actions = []
+        if self.menu is not None:
+            try:
+                self.iface.vectorMenu().removeAction(self.menu.menuAction())
+            except (TypeError, RuntimeError):
+                pass
+            self.menu.deleteLater()
+            self.menu = None
         if self.toolbar is not None:
             self.toolbar.deleteLater()
             self.toolbar = None
+        if self.windows is not None:
+            self.windows.unload()
+            self.windows = None
         if self.dock is not None:
             self.dock.cleanup()
             self.iface.removeDockWidget(self.dock)
             self.dock.deleteLater()
             self.dock = None
+        if self.access_guard is not None:
+            self.access_guard.unload()
+            self.access_guard = None
         if self.watchers is not None:
             self.watchers.unload()
             self.watchers = None
@@ -183,24 +251,115 @@ class NenaRclPlugin:
             self.archive_watchers = None
 
     # ------------------------------------------------------------------
-    def _add_action(self, icon_name, text, slot, checkable=False, use_toggled=True):
-        a = QAction(icon(icon_name), text, self.iface.mainWindow())
+    def _add_action(self, icon_name, text, slot, group, checkable=False, use_toggled=True, toolbar=True,
+                    short=""):
+        a = QAction(icon(icon_name) if icon_name else QIcon(), text, self.iface.mainWindow())
+        a.setToolTip(text.replace("&&", "&"))
+        if short:
+            a.setIconText(short)
         a.setCheckable(checkable)
         if checkable and use_toggled:
             a.toggled.connect(slot)
         else:
             a.triggered.connect(slot)
-        self.toolbar.addAction(a)
-        self.iface.addPluginToVectorMenu(MENU, a)
+        if toolbar:
+            self.toolbar.addAction(a)
+        self._menu_groups.setdefault(group, []).append(a)
         self.actions.append(a)
         return a
 
-    def _add_menu_action(self, icon_name, text, slot):
-        a = QAction(icon(icon_name), text, self.iface.mainWindow())
-        a.triggered.connect(slot)
-        self.iface.addPluginToVectorMenu(MENU, a)
-        self.actions.append(a)
-        return a
+    def _add_menu_action(self, icon_name, text, slot, group):
+        return self._add_action(icon_name, text, slot, group, toolbar=False)
+
+    def _toolbar_separator(self):
+        self.toolbar.addSeparator()
+
+    def _windows_menu(self, parent):
+        menu = QMenu(parent)
+        for action in self._menu_groups.get("windows") or []:
+            menu.addAction(action)
+        menu.addSeparator()
+        menu.addAction(self.act_style)
+        menu.addAction(self.act_docked)
+        return menu
+
+    def _add_windows_button(self, before=None):
+        """A labelled drop-down that opens the NENA windows."""
+        button = QToolButton(self.toolbar)
+        button.setText("NENA")
+        button.setIcon(icon("windows.svg"))
+        button.setToolTip("Open a NENA window: Streets, Addresses, Ranges, Check, Lookup tables, "
+                          "Schema and import, Settings")
+        button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
+        self._windows_popup = self._windows_menu(button)
+        button.setMenu(self._windows_popup)
+        self._windows_button = button
+        if before is not None:
+            self._windows_button_action = self.toolbar.insertWidget(before, button)
+        else:
+            self._windows_button_action = self.toolbar.addWidget(button)
+
+    def _add_one_way_button(self):
+        """A labelled drop-down: mark selected centerlines two-way, FT, or TF (for routing)."""
+        from .core.direction import ONE_WAY_CHOICES
+        button = QToolButton(self.toolbar)
+        button.setText("One-way")
+        button.setIcon(icon("oneway.svg"))
+        button.setToolTip("Mark the selected centerlines two-way (B), one-way From → To (FT), or one-way "
+                          "To → From (TF). FT and TF follow the direction the line was drawn")
+        button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
+        menu = QMenu(button)
+        self._one_way_actions = []
+        for code, text, tip in ONE_WAY_CHOICES + ((None, "Clear one-way", "Empty the OneWay field"),):
+            if code is None:
+                menu.addSeparator()
+            act = QAction(text, menu)
+            act.setToolTip(tip)
+            act.triggered.connect(lambda *_, c=code: self._dock().set_one_way_selected(c))
+            menu.addAction(act)
+            self._one_way_actions.append(act)
+        button.setMenu(menu)
+        self._one_way_menu = menu
+        self._one_way_button = button
+        self.toolbar.addWidget(button)
+        group = self._menu_groups.setdefault("centerline", [])
+        sub = QMenu("One-way (routing)", self.iface.mainWindow())
+        for act in self._one_way_actions:
+            sub.addAction(act)
+        self._one_way_submenu = sub
+        group.append(sub.menuAction())
+
+    def _set_docked(self, checked):
+        self._dock()
+        if self.windows is not None:
+            self.windows.set_docked(checked)
+
+    def _build_menu(self):
+        menu = QMenu(MENU, self.iface.mainWindow())
+        titles = (("windows", "Windows"), ("centerline", "Centerlines"), ("addressing", "Addressing"),
+                  ("setup", "Setup"))
+        started = False
+        for key, title in titles:
+            actions = self._menu_groups.get(key) or []
+            if not actions:
+                continue
+            if started:
+                menu.addSeparator()
+            started = True
+            label = QAction(title, menu)
+            label.setEnabled(False)
+            font = label.font()
+            font.setBold(True)
+            label.setFont(font)
+            menu.addAction(label)
+            for action in actions:
+                menu.addAction(action)
+            if key == "windows":
+                menu.addAction(self.act_docked)
+        self.iface.vectorMenu().addMenu(menu)
+        self.menu = menu
 
     def _ensure_spacer_first(self):
         tb = self.toolbar
@@ -302,8 +461,8 @@ class NenaRclPlugin:
     def _dock(self) -> NenaDock:
         if self.dock is None:
             self.dock = NenaDock(self.iface, self.watchers, self.iface.mainWindow(), self.street_watchers)
-            self._install_dock()
-            self.dock.visibilityChanged.connect(self._dock_visibility)
+            self.windows = WindowHost(self.iface, self.dock, find_dock_host=self._catalog_host)
+            self.windows.on_visibility = self._windows_visibility
             self.dock.cb_layer.layerChanged.connect(self._sync_auto_action)
             self.dock.splitToolRequested.connect(self.activate_split_tool)
             self.dock.addressToolRequested.connect(self.activate_address_tool)
@@ -311,26 +470,17 @@ class NenaRclPlugin:
             self.dock.unitsToolRequested.connect(self.activate_units_tool)
             self.dock.projectConfigSaved.connect(self._config_saved)
             self.dock.hide()
-            QTimer.singleShot(0, self._install_dock)
-            QTimer.singleShot(300, self._install_dock)
         return self.dock
 
     def show_tab(self, name):
-        d = self._dock()
-        d.setVisible(True)
-        d.raise_()
-        d.tabs.setCurrentWidget(getattr(d, name))
+        """Open one window. ``streets`` and ``addresses`` keep their old names."""
+        self._dock()
+        aliases = {"check": "validation", "ranges": "ranges"}
+        self.windows.show(aliases.get(name, name))
 
-    def toggle_panel(self, checked):
-        d = self._dock()
-        d.setVisible(checked)
-        if checked:
-            d.raise_()
-
-    def _dock_visibility(self, visible):
-        self.act_panel.blockSignals(True)
-        self.act_panel.setChecked(visible)
-        self.act_panel.blockSignals(False)
+    def _windows_visibility(self):
+        if self.windows is None:
+            return
         self._sync_auto_action()
 
     # -- split & re-range tool -------------------------------------------
@@ -343,7 +493,7 @@ class NenaRclPlugin:
     def activate_split_tool(self, *args):
         d = self._dock()
         if d.layer is None:
-            self._notify("Warning", "Choose a centerline layer in the NENA Addressing panel first.")
+            self._notify("Warning", "Choose a centerline layer in a NENA window first.")
             self.act_split_tool.setChecked(False)
             return
         d._persist()  # noqa: SLF001 - make sure the stored config matches the panel
@@ -358,7 +508,7 @@ class NenaRclPlugin:
     def _address_context(self):
         d = self._dock()
         if d.layer is None:
-            raise ConfigError("Choose the centerline layer in the NENA Addressing panel first.")
+            raise ConfigError("Choose the centerline layer in a NENA window first.")
         return AE.AddressContext(d.addresses.store(), d.layer, d.collect())
 
     def activate_address_tool(self, *args):
@@ -370,8 +520,8 @@ class NenaRclPlugin:
             self.show_tab("addresses")
             return
         self.iface.mapCanvas().setMapTool(self.address_tool)
-        self._notify("Info", "Place address: click the road (or a driveway) for the access point, then click "
-                             "the rooftop. Hold Shift to also draw a straight driveway. Esc cancels.")
+        self._notify("Info", "Place address: click the road (or a driveway), then click the building. "
+                             "An access point is saved 10 feet off the road. Esc cancels.")
 
     def activate_driveway_tool(self, *args):
         try:
@@ -382,7 +532,7 @@ class NenaRclPlugin:
             self.show_tab("addresses")
             return
         if ctx.dw is None:
-            self._notify("Warning", "Choose a driveway layer on the Addresses tab first.")
+            self._notify("Warning", "Choose a driveway layer in the Addresses window first.")
             self.act_driveway.setChecked(False)
             self.show_tab("addresses")
             return
@@ -399,8 +549,9 @@ class NenaRclPlugin:
             self.show_tab("addresses")
             return
         self.iface.mapCanvas().setMapTool(self.units_tool)
-        self._notify("Info", "Place units: click the shared access once, then each rooftop. "
-                             "Right-click or Esc ends this access. Esc again leaves the tool.")
+        self._notify("Info", "Place units: click the road to take the house number, then click each unit "
+                             "under that roof. The house number stays and the unit number changes. "
+                             "Right-click or Esc ends this roof. Esc again leaves the tool.")
 
     def _undo_address(self):
         try:
@@ -419,8 +570,16 @@ class NenaRclPlugin:
             self.editor_watchers.refresh()
         if self.archive_watchers is not None:
             self.archive_watchers.refresh()
+        if self.access_guard is not None:
+            self.access_guard.refresh()
         if self.overlay is not None:
             self.overlay.refresh()
+        try:
+            from .core.lookups import apply_value_relations
+            from .core.project_config import load_project_config
+            apply_value_relations(load_project_config(), self.dock.layer if self.dock is not None else None)
+        except Exception:  # noqa: BLE001 - relations are a convenience, not the save
+            pass
 
     def _project_loaded(self, *args):
         if self.overlay is not None:
@@ -428,13 +587,25 @@ class NenaRclPlugin:
         if self.dock is not None:
             self.dock.streets.load()
             self.dock.addresses.load()
+            self.dock.lookups.load()
             self.dock.sync_archive_option()
+        # Put the drop-downs back on fields added since the project was last saved.
+        QTimer.singleShot(0, self._apply_dropdowns)
+
+    def _apply_dropdowns(self):
+        try:
+            from .core.lookups import apply_dropdowns
+            from .core.project_config import load_project_config
+            centerline = self.dock.layer if self.dock is not None else None
+            apply_dropdowns(load_project_config(), centerline)
+        except Exception:  # noqa: BLE001 - a drop-down is a convenience, not a reason to fail loading
+            pass
 
     # -- auto re-range toggle ----------------------------------------------
     def toggle_auto(self, checked):
         d = self._dock()
         if d.layer is None:
-            self._notify("Warning", "Choose a centerline layer in the NENA Addressing panel first.")
+            self._notify("Warning", "Choose a centerline layer in a NENA window first.")
             self._sync_auto_action()
             return
         d.edit.chk_merge.setChecked(checked)

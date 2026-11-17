@@ -110,7 +110,6 @@ class MappingTab(QWidget):
              lambda *_: self.addFieldsRequested.emit(True)),
             ("Add all fields", "Create every unmapped field on the layer",
              lambda *_: self.addFieldsRequested.emit(False)),
-            ("Save", "Save mapping and the rest of the panel settings", (lambda *_: self.saveRequested.emit())),
             ("Import…", "Load a configuration file", (lambda *_: self.importRequested.emit())),
             ("Export…", "Save the configuration to a file", (lambda *_: self.exportRequested.emit())),
             ("Empty layer", "Create an empty in-memory layer with this schema",

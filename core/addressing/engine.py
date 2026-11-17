@@ -11,11 +11,11 @@ their own CRS.
 
 import math
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import Dict, Hashable, List, Optional, Sequence, Tuple
 
-from qgis.core import (QgsCoordinateReferenceSystem, QgsCoordinateTransform, QgsFeatureRequest, QgsGeometry,
+from qgis.core import (Qgis, QgsCoordinateReferenceSystem, QgsCoordinateTransform, QgsFeatureRequest, QgsGeometry,
                        QgsPointXY, QgsProject, QgsRectangle, QgsVectorLayer, QgsVectorLayerUtils, QgsWkbTypes)
 
 from ...compat import py_value
@@ -33,12 +33,19 @@ from ..streets.service import _with_street_id, suppressed
 from ..template import effective_fields
 from ..topology import SegmentInfo, assign_nodes, build_chains
 from . import numbering as NB
-from .ssap import COMMUNITY_FIELDS, DRIVEWAY_FIELDS, SSAP_FIELDS
+from ..access_rules import nearest_access, suppressed_guard
+from .ssap import ACCESS_FIELDS, COMMUNITY_FIELDS, DRIVEWAY_FIELDS, SSAP_FIELDS
 
 ADDRESS_COMMAND = "NENA: add address"
 DRIVEWAY_COMMAND = "NENA: add driveway"
 DRAW_DRIVEWAY_COMMAND = "NENA: draw driveway"
+ACCESS_COMMAND = "NENA: add access point"
 _NUM = re.compile(r"^\s*(\d+)\s*([A-Za-z]?)")
+# A stored access farther than this from its address is not the driveway end.
+# Whole-degree coordinates (a SQL Server float saved as an integer) are.
+_ACCESS_LIMIT_M = 5000.0
+# Place address drops the access point this far off the centerline, on the building's side.
+_ACCESS_OFFSET_M = to_meters(10.0, "feet")
 
 # features created by the address tool, newest last: [(layer_id, fid), ...] per address
 UNDO_STACK: List[List[Tuple[str, Hashable]]] = []
@@ -109,14 +116,14 @@ class AddressContext:
         s, a = pcfg.streets, pcfg.addresses
         self.rcl = centerline_layer
         if self.rcl is None:
-            raise ConfigError("Choose the centerline layer at the top of the panel.")
+            raise ConfigError("Choose the centerline layer at the top of the window.")
         cfg = centerline_cfg or load_from_layer(self.rcl) or PluginConfig(
             mapping=auto_map([f.name() for f in self.rcl.fields()]))
         self.rcl_cfg = _with_street_id(cfg, self.rcl, s.street_id_field)
         self.rcl_acc = FieldAccessor(self.rcl, self.rcl_cfg)
         self.addr = layer_for(s, "address")
         if self.addr is None:
-            raise ConfigError("Choose the address point layer (Addresses tab).")
+            raise ConfigError("Choose the address point layer in the Addresses window.")
         acfg = PluginConfig()
         acfg.mapping = address_mapping(self.addr, pcfg)
         self.addr_acc = FieldAccessor(self.addr, acfg)
@@ -129,6 +136,12 @@ class AddressContext:
             dcfg.mapping = dict(auto_map([f.name() for f in self.dw.fields()], DRIVEWAY_FIELDS),
                                 **{k: v for k, v in a.driveway_mapping.items() if v})
             self.dw_acc = FieldAccessor(self.dw, dcfg)
+        self.access = layer_for(a, "access")
+        self.access_acc = None
+        if self.access is not None:
+            apcfg = PluginConfig()
+            apcfg.mapping = auto_map([f.name() for f in self.access.fields()], ACCESS_FIELDS)
+            self.access_acc = FieldAccessor(self.access, apcfg)
         self.master = layer_for(s, "master")
         self.repo = StreetRepository(self.master) if self.master is not None else None
         self.to_addr = _xf(self.rcl.crs(), self.addr.crs())
@@ -179,14 +192,29 @@ class StreetMeasure:
                                      info.end_bearing))
         assign_nodes(infos, ctx.tol)
         node_dist: Dict[int, float] = {}
+        # A "run" is one connected stretch of the street (a branch belongs to the run it
+        # leaves). Distances are only comparable inside one run: a separate piece of the
+        # same street starts again at 0.
+        self.run: Dict[Hashable, int] = {}
+        node_run: Dict[int, int] = {}
+        runs = 0
         for chain in build_chains(infos):
-            d = node_dist.get(chain[0].start_node, 0.0)
+            first = chain[0].start_node
+            d = node_dist.get(first, 0.0)
+            if first in node_run:
+                run = node_run[first]
+            else:
+                run = runs
+                runs += 1
             for s in chain:
                 node_dist.setdefault(s.start_node, d)
+                node_run.setdefault(s.start_node, run)
                 g, ln = geoms[s.fid]
                 self.segs[s.fid] = (g, ln, d)
+                self.run[s.fid] = run
                 d += ln
                 node_dist.setdefault(s.end_node, d)
+                node_run.setdefault(s.end_node, run)
 
     def locate(self, pt: QgsPointXY, only_fid: Optional[Hashable] = None):
         """-> (distance_m, fid, frac, (dx, dy) road direction, sq. distance) or None."""
@@ -268,30 +296,58 @@ def plan_address(ctx: AddressContext, access: QgsPointXY, rooftop: QgsPointXY,
     loc = measure.locate(access, only_fid=segment_fid)
     if loc is None:
         raise ConfigError("Could not measure along this street.")
-    dist, _fid, frac, (dx, dy), _sq = loc
+    _street_dist, _fid, frac, (dx, dy), _sq = loc
+    # Left and right come from the direction the segment was drawn.
     side = NB.side_of(dx, dy, rooftop.x() - access.x(), rooftop.y() - access.y())
     if side is None:
         raise ConfigError("The rooftop lies on the road line – click beside the road.")
+    side_name = "left" if side == "L" else "right"
     a = ctx.pcfg.addresses
+    # Odd / even comes from the settings (odd on the left, even on the right by default).
     parity = a.left_parity if side == "L" else a.right_parity
-    if a.use_segment_parity and ctx.rcl_acc.has(SIDE_FIELDS[side]["parity"]):
+    parity_note = ""
+    if ctx.rcl_acc.has(SIDE_FIELDS[side]["parity"]):
         seg_par = normalize_parity(ctx.rcl_acc.get(feat, SIDE_FIELDS[side]["parity"]), None)
-        if seg_par in ("O", "E"):
-            parity = seg_par
-        elif seg_par == "Z":
-            raise ConfigError(f"The {'left' if side == 'L' else 'right'} side of this segment is marked "
-                              "as having no addresses (parity Z).")
+        if seg_par == "Z":
+            raise ConfigError(f"The {side_name} side of this segment is marked as having no addresses (parity Z).")
+        if seg_par in ("O", "E") and seg_par != normalize_parity(parity, None):
+            if getattr(a, "segment_parity_wins", False):
+                parity = seg_par
+            else:
+                word = {"O": "odd", "E": "even"}
+                parity_note = (f"This segment's {SIDE_FIELDS[side]['parity']} says {word[seg_par]}, but your "
+                               f"settings put {word.get(normalize_parity(parity, ''), 'any')} numbers on the "
+                               f"{side_name}. The settings were used. Re-range the segment to match.")
     community, notes, side_updates = community_from_segment(ctx, feat, side, frac)
     settings = numbering_settings(a, community.get(a.override_field, ""))
     seg_from, seg_to = ctx.rcl_acc.get_int(feat, SIDE_FIELDS[side]["from"]), \
         ctx.rcl_acc.get_int(feat, SIDE_FIELDS[side]["to"])
-    neighbors = existing_neighbors(ctx, sid, parts, side, measure, exclude_address)
+    # Everything is measured on the segment that was clicked: the distance from its first
+    # point, starting at its From number on that side (the start number when it has none).
+    seg_len = measure.segs[segment_fid][1] if segment_fid in measure.segs else 0.0
+    dist = frac * seg_len
+    base_note = ""
+    if seg_from:
+        settings = replace(settings, start_number=int(seg_from))
+    elif settings.method != NB.M_INTERPOLATE:
+        base_note = (f"This segment has no From number on the {side_name} side, so numbering starts at "
+                     f"{settings.start_number}.")
+    on_street = street_addresses(ctx, sid, parts, side, measure, exclude_address)
+    neighbors = [NB.Neighbor(item.seg_distance, item.number, item.suffix)
+                 for item in on_street if item.segment == segment_fid]
     res = NB.calculate(settings, parity, neighbors, dist, frac, seg_from, seg_to)
     plan = AddressPlan(segment_fid, sid, parts, side, parity, dist, frac, access, rooftop, list(vertices), res,
                        community, notes, side_updates, rcl_nguid=str(ctx.rcl_acc.get(feat, "RCL_NGUID") or ""),
                        parent_driveway=parent_driveway)
-    if res.message:
-        plan.messages.append(res.message)
+    for note in (parity_note, base_note, res.message):
+        if note:
+            plan.messages.append(note)
+    if res.number is not None and not res.suffix:
+        elsewhere = [item for item in on_street if item.segment != segment_fid and item.number == res.number
+                     and not item.suffix]
+        if elsewhere:
+            plan.messages.append(f"{res.number} is already used on another segment of this street. "
+                                 "Check the ranges with Validate.")
     if seg_from is not None and seg_to is not None and res.number is not None and (seg_from or seg_to):
         lo, hi = sorted((seg_from, seg_to))
         if not (lo <= res.number <= hi):
@@ -300,12 +356,140 @@ def plan_address(ctx: AddressContext, access: QgsPointXY, rooftop: QgsPointXY,
     return plan
 
 
+def _beside(access: QgsPointXY, dx: float, dy: float, side: str, offset: float) -> QgsPointXY:
+    """A point a short step to the left or right of the road direction."""
+    length = math.hypot(dx, dy) or 1.0
+    sign = 1 if side == "L" else -1
+    return QgsPointXY(access.x() - sign * dy / length * offset, access.y() + sign * dx / length * offset)
+
+
+def house_number_at(ctx: AddressContext, segment_fid: Hashable, access: QgsPointXY,
+                    hint: Optional[QgsPointXY] = None, parent_driveway: str = "") -> int:
+    """
+    The house number where the road was clicked.
+
+    The click position along the road fixes the number. ``hint`` is the raw
+    click and picks the side when it falls off the centerline. The other side
+    is tried when that side cannot be numbered. Place units keeps this number
+    and only advances the unit.
+    """
+    feat = next(ctx.rcl.getFeatures(QgsFeatureRequest().setFilterFid(segment_fid)), None)
+    if feat is None:
+        raise ConfigError("Centerline not found.")
+    measure = ctx.measure_for(feat)
+    loc = measure.locate(access, only_fid=segment_fid)
+    if loc is None:
+        raise ConfigError("Could not measure along this street.")
+    _dist, _fid, _frac, (dx, dy), _sq = loc
+    hint_side = None
+    if hint is not None:
+        hint_side = NB.side_of(dx, dy, hint.x() - access.x(), hint.y() - access.y())
+    sides = [hint_side] if hint_side else []
+    for side in ("L", "R"):
+        if side not in sides:
+            sides.append(side)
+    offset = gu.metres_to_layer_units(3.0, ctx.rcl.crs())
+    if offset <= 0:
+        offset = 3.0
+    errors = []
+    for side in sides:
+        try:
+            plan = plan_address(ctx, access, _beside(access, dx, dy, side, offset), [], segment_fid,
+                                parent_driveway=parent_driveway)
+        except ConfigError as exc:
+            errors.append(str(exc))
+            continue
+        if plan.result.number is None or plan.result.needs_choice:
+            errors.append(plan.result.message or "This spot needs a house number typed in.")
+            continue
+        return int(plan.result.number)
+    raise ConfigError(errors[-1] if errors else "Could not number this point on the road.")
+
+
+def house_numbers_by_side(ctx: AddressContext, segment_fid: Hashable, access: QgsPointXY,
+                          parent_driveway: str = "") -> Dict[str, Optional[int]]:
+    """
+    The house number at this spot on the road, for each side: ``{"L": 151, "R": 150}``.
+
+    A road click sits on the centerline, so it cannot say which side the
+    building is on. Place units works out both and lets the first unit click
+    (which is beside the road) pick the side. A side that cannot be numbered
+    (parity Z, a number that needs a choice) is None.
+    """
+    feat = next(ctx.rcl.getFeatures(QgsFeatureRequest().setFilterFid(segment_fid)), None)
+    if feat is None:
+        raise ConfigError("Centerline not found.")
+    loc = ctx.measure_for(feat).locate(access, only_fid=segment_fid)
+    if loc is None:
+        raise ConfigError("Could not measure along this street.")
+    _dist, _fid, _frac, (dx, dy), _sq = loc
+    offset = gu.metres_to_layer_units(3.0, ctx.rcl.crs())
+    if offset <= 0:
+        offset = 3.0
+    out: Dict[str, Optional[int]] = {}
+    for side in ("L", "R"):
+        try:
+            plan = plan_address(ctx, access, _beside(access, dx, dy, side, offset), [], segment_fid,
+                                parent_driveway=parent_driveway)
+        except ConfigError:
+            out[side] = None
+            continue
+        ok = plan.result.number is not None and not plan.result.needs_choice
+        out[side] = int(plan.result.number) if ok else None
+    return out
+
+
+def parity_matches(number: int, parity: str) -> bool:
+    """True when ``number`` is odd for O and even for E. Both / unknown always match."""
+    p = (parity or "").strip().upper()
+    if p == "O":
+        return number % 2 == 1
+    if p == "E":
+        return number % 2 == 0
+    return True
+
+
+@dataclass
+class StreetAddress:
+    segment: Hashable        # centerline the address is measured on
+    seg_distance: float      # metres from that segment's first point
+    street_distance: float   # metres from the start of the connected street
+    number: int
+    suffix: str = ""
+
+
+def street_addresses(ctx: AddressContext, sid: str, parts, side: str, measure: StreetMeasure,
+                     exclude: Optional[Hashable] = None) -> List[StreetAddress]:
+    """Addresses already on this street and side, with the segment each one sits on."""
+    out = []
+    for f, num, suf, loc in _street_address_locations(ctx, sid, parts, side, measure, exclude):
+        seg_len = measure.segs[loc[1]][1] if loc[1] in measure.segs else 0.0
+        out.append(StreetAddress(loc[1], loc[2] * seg_len, loc[0], num, suf))
+    return out
+
+
 def existing_neighbors(ctx: AddressContext, sid: str, parts, side: str, measure: StreetMeasure,
-                       exclude: Optional[Hashable] = None) -> List[NB.Neighbor]:
-    """Addresses already on this street and side, measured along the street."""
+                       exclude: Optional[Hashable] = None, segment: Optional[Hashable] = None) -> List[NB.Neighbor]:
+    """
+    Addresses already on this street and side.
+
+    With ``segment``, only the addresses on that segment, measured from its first
+    point. Without it, every address on the street, measured along the street.
+    """
+    out = []
+    for item in street_addresses(ctx, sid, parts, side, measure, exclude):
+        if segment is None:
+            out.append(NB.Neighbor(item.street_distance, item.number, item.suffix))
+        elif item.segment == segment:
+            out.append(NB.Neighbor(item.seg_distance, item.number, item.suffix))
+    return out
+
+
+def _street_address_locations(ctx: AddressContext, sid: str, parts, side: str, measure: StreetMeasure,
+                              exclude: Optional[Hashable] = None):
+    """(feature, number, suffix, measure.locate result) for each address on this street and side."""
     acc = ctx.addr_acc
     key = N.name_key(parts)
-    out = []
     for f in ctx.addr.getFeatures():
         if f.id() == exclude:
             continue
@@ -329,8 +513,15 @@ def existing_neighbors(ctx: AddressContext, sid: str, parts, side: str, measure:
         if s not in ("L", "R") and roof is not None:
             s = NB.side_of(loc[3][0], loc[3][1], roof.x() - probe.x(), roof.y() - probe.y()) or ""
         if s == side:
-            out.append(NB.Neighbor(loc[0], num, suf))
-    return out
+            yield f, num, suf, loc
+
+
+def _metres_between(ctx: AddressContext, a: QgsPointXY, b: QgsPointXY) -> float:
+    try:
+        raw = ctx.da.measureLine(QgsPointXY(a), QgsPointXY(b))
+        return float(ctx.da.convertLengthMeasurement(raw, Qgis.DistanceUnit.Meters))
+    except Exception:  # noqa: BLE001 - the fake distance tool has no measureLine
+        return math.hypot(a.x() - b.x(), a.y() - b.y())
 
 
 def stored_access(ctx: AddressContext, f) -> Optional[QgsPointXY]:
@@ -339,7 +530,9 @@ def stored_access(ctx: AddressContext, f) -> Optional[QgsPointXY]:
     if acc.has("Access_X") and acc.has("Access_Y"):
         x, y = py_value(f.attribute(acc.index["Access_X"])), py_value(f.attribute(acc.index["Access_Y"]))
         if x not in (None, "") and y not in (None, ""):
-            return ctx.from_addr.transform(QgsPointXY(float(x), float(y)))
+            pt = ctx.from_addr.transform(QgsPointXY(float(x), float(y)))
+            if _stored_access_near_address(ctx, f, pt):
+                return pt
     if ctx.dw is not None and ctx.dw_acc is not None and ctx.dw_acc.has("Site_NGUID") and acc.has("Site_NGUID"):
         nguid = acc.get(f, "Site_NGUID")
         if nguid:
@@ -349,6 +542,24 @@ def stored_access(ctx: AddressContext, f) -> Optional[QgsPointXY]:
                     if pl:
                         return _xf(ctx.dw.crs(), ctx.rcl.crs()).transform(QgsPointXY(pl[0][0]))
     return None
+
+
+def _stored_access_near_address(ctx: AddressContext, feature, access: QgsPointXY) -> bool:
+    """False when the stored access is kilometres from the address.
+
+    Those coordinates were rounded to a whole degree. Using them puts every
+    house at the start of the street, and the next number is then forced up
+    to the last house on the road.
+    """
+    if not feature.hasGeometry():
+        return True
+    try:
+        roof = ctx.from_addr.transform(_pt(feature.geometry()))
+    except Exception:  # noqa: BLE001 - keep the stored point when the address geometry cannot be read
+        return True
+    if roof is None:
+        return True
+    return _metres_between(ctx, roof, access) <= _ACCESS_LIMIT_M
 
 
 # ---------------------------------------------------------------------------
@@ -459,16 +670,172 @@ def _new_nguid(ctx: AddressContext, kind: str) -> Optional[str]:
     return make_nguid(local_id(ctx.edit.nguid_local_id, None), ctx.edit.agency_id, ctx.edit.nguid_format, kind)
 
 
+def _new_access_id() -> str:
+    from ..streets.names import new_street_id
+    return new_street_id()
+
+
+def _parent_access_id(ctx: AddressContext, parent_driveway: str) -> str:
+    """AccessPointID already stored on the driveway this click branched from."""
+    if not parent_driveway or ctx.dw is None or ctx.dw_acc is None or not ctx.dw_acc.has("AccessPointID"):
+        return ""
+    for feature in ctx.dw.getFeatures():
+        if str(ctx.dw_acc.get(feature, "DW_NGUID") or "") != parent_driveway:
+            continue
+        return str(ctx.dw_acc.get(feature, "AccessPointID") or "").strip()
+    return ""
+
+
+def _access_candidates(ctx: AddressContext, point: QgsPointXY):
+    """(access id, x, y) near ``point`` in the access layer's CRS."""
+    layer = ctx.access
+    acc = ctx.access_acc
+    if layer is None or acc is None or not acc.has("AccessPointID"):
+        return [], None, 0.0
+    origin = _xf(ctx.rcl.crs(), layer.crs()).transform(point)
+    tol = gu.metres_to_layer_units(max(ctx.rcl_cfg.ranging.snap_tolerance_m, 0.05), layer.crs())
+    rect = QgsRectangle(origin.x() - tol, origin.y() - tol, origin.x() + tol, origin.y() + tol)
+    found = []
+    for feature in layer.getFeatures(QgsFeatureRequest().setFilterRect(rect)):
+        geom = feature.geometry()
+        if geom is None or geom.isNull() or geom.isEmpty():
+            continue
+        try:
+            located = geom.asPoint()
+        except Exception:  # noqa: BLE001 - a bad geometry is not a match
+            continue
+        aid = str(acc.get(feature, "AccessPointID") or "").strip()
+        if aid:
+            found.append((aid, located.x(), located.y()))
+    return found, origin, tol
+
+
+def _forget_access(layer, fid) -> None:
+    """Remove an access point this command created after the address itself was refused."""
+    if layer is None or fid is None:
+        return
+    with suppressed_guard():
+        try:
+            ensure_editable(layer)
+            layer.beginEditCommand("NENA: undo access point")
+            if layer.deleteFeature(fid):
+                layer.endEditCommand()
+            else:
+                layer.destroyEditCommand()
+        except Exception:  # noqa: BLE001 - the original error is the one to report
+            try:
+                layer.destroyEditCommand()
+            except Exception:  # noqa: BLE001
+                pass
+
+
+def access_seat(ctx: AddressContext, plan: AddressPlan) -> QgsPointXY:
+    """Point 10 feet straight off the road click, on the address side (centerline CRS).
+
+    The click stays the place the house number is measured. The access-point
+    feature sits beside the road so it is not drawn on top of the centerline.
+    """
+    origin = QgsPointXY(plan.access)
+    direction = _segment_direction(ctx, plan)
+    if direction is None:
+        return origin
+    return _move_metres(ctx, origin, direction[0], direction[1], _ACCESS_OFFSET_M)
+
+
+def _segment_direction(ctx: AddressContext, plan: AddressPlan):
+    """Unit vector straight off the clicked segment, toward ``plan.side``."""
+    feat = next(ctx.rcl.getFeatures(QgsFeatureRequest().setFilterFid(plan.segment_fid)), None)
+    if feat is None or not feat.hasGeometry():
+        return None
+    geom = gu.linear_geometry(feat.geometry())
+    if geom.isNull() or geom.isEmpty():
+        return None
+    total = geom.length()
+    if total <= 0:
+        return None
+    t = max(0.0, min(1.0, plan.frac))
+    here = geom.interpolate(total * t).asPoint()
+    step = max(total * 0.01, 1e-9)
+    ahead = geom.interpolate(min(total, total * t + step)).asPoint()
+    dx, dy = ahead.x() - here.x(), ahead.y() - here.y()
+    if dx == 0 and dy == 0:
+        back = geom.interpolate(max(0.0, total * t - step)).asPoint()
+        dx, dy = here.x() - back.x(), here.y() - back.y()
+    length = math.hypot(dx, dy)
+    if length == 0:
+        return None
+    sign = 1 if plan.side == "L" else -1
+    return -sign * dy / length, sign * dx / length
+
+
+def _move_metres(ctx: AddressContext, origin: QgsPointXY, ux: float, uy: float, metres: float) -> QgsPointXY:
+    """Move ``metres`` along a layer-space unit vector. Geographic layers use a measured step."""
+    step = gu.metres_to_layer_units(1.0, ctx.rcl.crs())
+    if step <= 0:
+        step = 1.0
+    probe = QgsPointXY(origin.x() + ux * step, origin.y() + uy * step)
+    measured = _metres_between(ctx, origin, probe)
+    if measured <= 1e-9:
+        measured = step
+    scale = metres / measured * step
+    return QgsPointXY(origin.x() + ux * scale, origin.y() + uy * scale)
+
+
+def link_access(ctx: AddressContext, point: QgsPointXY, street_id: str = "", rcl_nguid: str = "",
+                side: str = "", parent_driveway: str = ""):
+    """
+    Reuse an access point at this spot, or create one.
+
+    Returns ``(AccessPointID, new feature id or None)``. An empty id means the
+    project has no access-point layer (or it has no AccessPointID field). The
+    new feature, when there is one, is already in that layer's edit buffer.
+    """
+    parent_id = _parent_access_id(ctx, parent_driveway)
+    if parent_id:
+        return parent_id, None
+    candidates, origin, tol = _access_candidates(ctx, point)
+    found = nearest_access(candidates, origin.x(), origin.y(), tol) if origin is not None else ""
+    if found:
+        return found, None
+    layer = ctx.access
+    acc = ctx.access_acc
+    if layer is None or acc is None or not acc.has("AccessPointID") or origin is None:
+        return "", None
+    geom = QgsGeometry.fromPointXY(origin)
+    if QgsWkbTypes.isMultiType(layer.wkbType()):
+        geom.convertToMultiType()
+    aid = _new_access_id()
+    stamp = datetime.now().replace(microsecond=0)
+    vals = {"AccessPointID": aid, "RCL_NGUID": rcl_nguid or None, "StreetID": street_id or None,
+            "RoadSide": side or None, "DateUpdate": stamp}
+    attrs = {acc.index[k]: acc.coerce(k, v) for k, v in vals.items() if acc.has(k)}
+    feat = QgsVectorLayerUtils.createFeature(layer, geom, attrs, layer.createExpressionContext())
+    ensure_editable(layer)
+    layer.beginEditCommand(ACCESS_COMMAND)
+    if not layer.addFeature(feat):
+        layer.destroyEditCommand()
+        raise ConfigError("The access point layer refused the new point.")
+    layer.endEditCommand()
+    return aid, feat.id()
+
+
 def commit_address(ctx: AddressContext, plan: AddressPlan, number: int, suffix: str = "", unit: str = "",
-                   placement: Optional[str] = None, create_driveway: Optional[bool] = None) -> Dict[str, Hashable]:
+                   placement: Optional[str] = None, create_driveway: Optional[bool] = None, *,
+                   unit_type: str = "", building: str = "", address_status: str = "",
+                   address_type: str = "") -> Dict[str, Hashable]:
     """Write the address point (and driveway) into the edit buffers. Returns their ids."""
     a = ctx.pcfg.addresses
     acc = ensure_full_name_mapping(ctx.addr, ctx.addr_acc)
     ctx.addr_acc = acc
     stamp = datetime.now().replace(microsecond=0)
     roof_addr = ctx.to_addr.transform(plan.rooftop)
+    # House number and Access_X/Y stay on the road click. The access-point
+    # feature is 10 feet straight off that click, on this side of the road.
     access_addr = ctx.to_addr.transform(plan.access)
     site_nguid = _new_nguid(ctx, "SSAP")
+    seat = plan.access if plan.parent_driveway else access_seat(ctx, plan)
+    aid, access_fid = link_access(ctx, seat, plan.street_id, plan.rcl_nguid, plan.side,
+                                  plan.parent_driveway)
     vals = dict(plan.parts)
     vals.update({"Add_Number": int(number), "AddNum_Suf": suffix or None, "Unit": unit or None,
                  "Placement": placement or a.placement, "StreetID": plan.street_id or None,
@@ -476,6 +843,16 @@ def commit_address(ctx: AddressContext, plan: AddressPlan, number: int, suffix: 
                  "RCL_NGUID": plan.rcl_nguid or None, "Access_X": access_addr.x(), "Access_Y": access_addr.y(),
                  "Addr_Side": plan.side, "Site_NGUID": site_nguid, "DateUpdate": stamp,
                  "DiscrpAgID": ctx.edit.agency_id or None})
+    if aid:
+        vals["AccessPointID"] = aid
+    if unit_type:
+        vals["UnitType"] = unit_type
+    if building:
+        vals["Building"] = building
+    if address_status:
+        vals["AddressStatus"] = address_status
+    if address_type:
+        vals["AddressType"] = address_type
     for key, value in plan.community.items():
         vals[COMMUNITY_FIELDS[key][0]] = value
     for field_name, value in address_fallbacks(ctx.rcl_cfg, plan.side, plan.community).items():
@@ -488,27 +865,42 @@ def commit_address(ctx: AddressContext, plan: AddressPlan, number: int, suffix: 
         geom.convertToMultiType()
     attrs = {acc.index[k]: acc.coerce(k, v) for k, v in vals.items() if acc.has(k)}
     feat = QgsVectorLayerUtils.createFeature(ctx.addr, geom, attrs, ctx.addr.createExpressionContext())
+    # Access point first, so Undo last address deletes the address before the access point.
     created = []
-    with suppressed():
-        ensure_editable(ctx.addr)
-        ctx.addr.beginEditCommand(ADDRESS_COMMAND)
-        if not ctx.addr.addFeature(feat):
-            ctx.addr.destroyEditCommand()
-            raise ConfigError("The address layer refused the new point.")
-        ctx.addr.endEditCommand()
-        created.append((ctx.addr.id(), feat.id()))
-        out = {"address": feat.id()}
-        want_dw = a.create_driveway if create_driveway is None else create_driveway
-        if want_dw and ctx.dw is not None:
-            out["driveway"] = _write_driveway(ctx, plan, site_nguid, stamp)
-            created.append((ctx.dw.id(), out["driveway"]))
-    UNDO_STACK.append(created)
-    del UNDO_STACK[:-50]
+    if access_fid is not None and ctx.access is not None:
+        created.append((ctx.access.id(), access_fid))
+    address_ok = False
+    try:
+        with suppressed():
+            ensure_editable(ctx.addr)
+            ctx.addr.beginEditCommand(ADDRESS_COMMAND)
+            if not ctx.addr.addFeature(feat):
+                ctx.addr.destroyEditCommand()
+                raise ConfigError("The address layer refused the new point.")
+            ctx.addr.endEditCommand()
+            created.append((ctx.addr.id(), feat.id()))
+            address_ok = True
+            out = {"address": feat.id(), "access": aid or None, "access_created": access_fid is not None}
+            # Place address never draws a driveway. Callers pass True only for
+            # Place units, when that window's driveway box is ticked.
+            want_dw = bool(create_driveway)
+            if want_dw and ctx.dw is not None:
+                out["driveway"] = _write_driveway(ctx, plan, site_nguid, stamp, aid)
+                created.append((ctx.dw.id(), out["driveway"]))
+        UNDO_STACK.append(created)
+        del UNDO_STACK[:-50]
+    except Exception:
+        if address_ok:
+            UNDO_STACK.append(created)
+            del UNDO_STACK[:-50]
+        elif access_fid is not None:
+            _forget_access(ctx.access, access_fid)
+        raise
     _stamp_centerline_side(ctx, plan)
     return out
 
 
-def _write_driveway(ctx: AddressContext, plan: AddressPlan, site_nguid, stamp) -> Hashable:
+def _write_driveway(ctx: AddressContext, plan: AddressPlan, site_nguid, stamp, access_id: str = "") -> Hashable:
     xf = _xf(ctx.rcl.crs(), ctx.dw.crs())
     if plan.parent_driveway and plan.vertices:
         # a spur off a shared driveway: starts where the user clicked on that driveway (first vertex)
@@ -521,7 +913,8 @@ def _write_driveway(ctx: AddressContext, plan: AddressPlan, site_nguid, stamp) -
         geom.convertToMultiType()
     acc = ctx.dw_acc
     vals = {"DW_NGUID": _new_nguid(ctx, "DW"), "Site_NGUID": site_nguid, "RCL_NGUID": plan.rcl_nguid or None,
-            "StreetID": plan.street_id or None, "Parent_DW": plan.parent_driveway or None, "DateUpdate": stamp}
+            "StreetID": plan.street_id or None, "Parent_DW": plan.parent_driveway or None,
+            "AccessPointID": access_id or None, "DateUpdate": stamp}
     attrs = {acc.index[k]: acc.coerce(k, v) for k, v in vals.items() if acc.has(k)}
     feat = QgsVectorLayerUtils.createFeature(ctx.dw, geom, attrs, ctx.dw.createExpressionContext())
     ensure_editable(ctx.dw)
@@ -554,7 +947,7 @@ def commit_driveway(ctx: AddressContext, access: QgsPointXY, vertices: Sequence[
     This is its own undo step. It is not part of *Undo last address*.
     """
     if ctx.dw is None or ctx.dw_acc is None:
-        raise ConfigError("Choose a driveway layer on the Addresses tab first.")
+        raise ConfigError("Choose a driveway layer in the Addresses window first.")
     chain = _distinct_chain([access] + list(vertices))
     if len(chain) < 2:
         raise ConfigError("A driveway needs the access point and at least one more point.")
@@ -564,6 +957,7 @@ def commit_driveway(ctx: AddressContext, access: QgsPointXY, vertices: Sequence[
         if feat is not None:
             sid, _parts = ctx.street_of(feat)
             rcl_nguid = str(ctx.rcl_acc.get(feat, "RCL_NGUID") or "")
+    aid, access_fid = link_access(ctx, access, sid, rcl_nguid, "", parent_driveway)
     xf = _xf(ctx.rcl.crs(), ctx.dw.crs())
     geom = QgsGeometry.fromPolylineXY([xf.transform(p) for p in chain])
     if QgsWkbTypes.isMultiType(ctx.dw.wkbType()):
@@ -571,16 +965,22 @@ def commit_driveway(ctx: AddressContext, access: QgsPointXY, vertices: Sequence[
     acc = ctx.dw_acc
     stamp = datetime.now().replace(microsecond=0)
     vals = {"DW_NGUID": _new_nguid(ctx, "DW"), "RCL_NGUID": rcl_nguid or None,
-            "StreetID": sid or None, "Parent_DW": parent_driveway or None, "DateUpdate": stamp}
+            "StreetID": sid or None, "Parent_DW": parent_driveway or None,
+            "AccessPointID": aid or None, "DateUpdate": stamp}
     attrs = {acc.index[k]: acc.coerce(k, v) for k, v in vals.items() if acc.has(k)}
     created = QgsVectorLayerUtils.createFeature(ctx.dw, geom, attrs, ctx.dw.createExpressionContext())
-    with suppressed():
-        ensure_editable(ctx.dw)
-        ctx.dw.beginEditCommand(DRAW_DRIVEWAY_COMMAND)
-        if not ctx.dw.addFeature(created):
-            ctx.dw.destroyEditCommand()
-            raise ConfigError("The driveway layer refused the new line.")
-        ctx.dw.endEditCommand()
+    try:
+        with suppressed():
+            ensure_editable(ctx.dw)
+            ctx.dw.beginEditCommand(DRAW_DRIVEWAY_COMMAND)
+            if not ctx.dw.addFeature(created):
+                ctx.dw.destroyEditCommand()
+                raise ConfigError("The driveway layer refused the new line.")
+            ctx.dw.endEditCommand()
+    except Exception:
+        if access_fid is not None:
+            _forget_access(ctx.access, access_fid)
+        raise
     return created.id()
 
 
@@ -590,19 +990,20 @@ def undo_last_address() -> int:
         raise ConfigError("Nothing to undo.")
     created = UNDO_STACK.pop()
     n = 0
-    with suppressed():
-        for layer_id, fid in reversed(created):
-            lyr = QgsProject.instance().mapLayer(layer_id)
-            if lyr is None or not lyr.isEditable():
-                continue
-            if next(lyr.getFeatures(QgsFeatureRequest().setFilterFid(fid)), None) is None:
-                continue
-            lyr.beginEditCommand("NENA: undo last address")
-            if lyr.deleteFeature(fid):
-                n += 1
-                lyr.endEditCommand()
-            else:
-                lyr.destroyEditCommand()
+    with suppressed_guard():
+        with suppressed():
+            for layer_id, fid in reversed(created):
+                lyr = QgsProject.instance().mapLayer(layer_id)
+                if lyr is None or not lyr.isEditable():
+                    continue
+                if next(lyr.getFeatures(QgsFeatureRequest().setFilterFid(fid)), None) is None:
+                    continue
+                lyr.beginEditCommand("NENA: undo last address")
+                if lyr.deleteFeature(fid):
+                    n += 1
+                    lyr.endEditCommand()
+                else:
+                    lyr.destroyEditCommand()
     return n
 
 

@@ -24,12 +24,14 @@ from .layer_access import ConfigError
 from .editor_user import connection_login
 from .project_config import layer_for, load_project_config
 from .schema_pack import ARCHIVE_COLUMNS, convert_value
+from .qt_safety import disconnect_all, safe_disconnect
 
 _KEY_FIELDS = {
     "centerline": ("RCL_NGUID",),
     "streets": ("StreetID",),
     "address": ("Site_NGUID",),
     "driveway": ("DW_NGUID",),
+    "access": ("AccessPointID",),
 }
 
 
@@ -40,6 +42,7 @@ def pairing(pcfg):
         "streets": layer_for(pcfg.streets, "master"),
         "address": layer_for(pcfg.streets, "address"),
         "driveway": layer_for(pcfg.addresses, "driveway"),
+        "access": layer_for(pcfg.addresses, "access"),
     }
     archive = {role: layer_for(pcfg.archive, role) for role in live}
     return live, archive
@@ -410,26 +413,19 @@ class ArchiveWatcher(QObject):
     def unload(self):
         prj = QgsProject.instance()
         for sig in (prj.readProject, prj.layersAdded, prj.layersRemoved):
-            try:
-                sig.disconnect(self.refresh)
-            except (TypeError, RuntimeError):
-                pass
+            safe_disconnect(prj, sig, self.refresh)
         self._detach()
 
     def _detach(self):
-        for sig, slot in self._conns:
-            try:
-                sig.disconnect(slot)
-            except (TypeError, RuntimeError):
-                pass
+        disconnect_all(self._conns)
         self._conns = []
         self._layers = {}
         self._roles = {}
         self._plans = {}
 
-    def _connect(self, sig, slot):
+    def _connect(self, owner, sig, slot):
         sig.connect(slot)
-        self._conns.append((sig, slot))
+        self._conns.append((owner, sig, slot))
 
     def refresh(self, *_args):
         """Attach to the live layers named in the project, when change tracking is on."""
@@ -438,7 +434,7 @@ class ArchiveWatcher(QObject):
         if not pcfg.archive.enabled:
             return
         live, archive = pairing(pcfg)
-        for role in M.ROLE_ORDER:
+        for role in tuple(M.ROLE_ORDER) + ("access",):
             src = live.get(role)
             dest = archive.get(role)
             if src is None or dest is None or src.id() == dest.id():
@@ -452,16 +448,16 @@ class ArchiveWatcher(QObject):
                 "live_names": _live_names(src),
             })
         for lid, layer in self._layers.items():
-            self._connect(layer.beforeCommitChanges, lambda *_, layer_id=lid: self._before(layer_id))
-            self._connect(layer.afterCommitChanges, lambda *_, layer_id=lid: self._after(layer_id))
+            self._connect(layer, layer.beforeCommitChanges, lambda *_, layer_id=lid: self._before(layer_id))
+            self._connect(layer, layer.afterCommitChanges, lambda *_, layer_id=lid: self._after(layer_id))
             rollback = getattr(layer, "afterRollBack", None)
             if rollback is not None:
-                self._connect(rollback, lambda *_, layer_id=lid: self._failed(layer_id))
+                self._connect(layer, rollback, lambda *_, layer_id=lid: self._failed(layer_id))
             # QGIS 4 does not expose commitError on the layer. Builds that do clear a failed save.
             commit_error = getattr(layer, "commitError", None)
             if commit_error is not None and hasattr(commit_error, "connect"):
-                self._connect(commit_error, lambda *_, layer_id=lid: self._failed(layer_id))
-            self._connect(layer.committedFeaturesAdded,
+                self._connect(layer, commit_error, lambda *_, layer_id=lid: self._failed(layer_id))
+            self._connect(layer, layer.committedFeaturesAdded,
                           lambda _layer_id, feats, layer_id=lid: self._added(layer_id, feats))
 
     def _before(self, lid):

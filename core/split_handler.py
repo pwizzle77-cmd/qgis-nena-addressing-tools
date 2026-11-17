@@ -45,6 +45,7 @@ from .nguid import local_id, make_nguid
 from .schema import RANGE_FIELDS, PARITY_FIELDS, SIDE_FIELDS, STREET_NAME_FIELDS
 from .split_ops import rerange_pieces
 from .topology import SegmentInfo, order_pieces
+from .qt_safety import alive
 
 _CACHE_LIMIT = 5000
 _MAX_NEW_ROADS = 50   # larger batches (paste/import) are not auto-split
@@ -73,6 +74,8 @@ class LayerWatcher(QObject):
         self._on_selection()
 
     def detach(self):
+        if not alive(self.layer):
+            return                       # the layer is gone and took its connections with it
         for sig, slot in ((self.layer.editCommandStarted, self._on_cmd_started),
                           (self.layer.editCommandEnded, self._on_cmd_ended),
                           (self.layer.editCommandDestroyed, self._on_cmd_destroyed),
