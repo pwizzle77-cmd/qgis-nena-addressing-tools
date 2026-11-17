@@ -14,8 +14,6 @@ It follows the NENA NG9-1-1 layout for road centerlines and site/structure addre
 | **License** | [GPL-2.0-or-later](LICENSE) |
 | **Source** | https://github.com/pwizzle77-cmd/qgis-nena-addressing-tools |
 
-> The plugin used to be called *NENA RCL Tools*. QGIS still loads it from a folder named `nena_rcl_tools`, so if you're upgrading, your settings carry over.
-
 ---
 
 ## Contents
