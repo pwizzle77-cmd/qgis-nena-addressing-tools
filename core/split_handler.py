@@ -161,6 +161,43 @@ class LayerWatcher(QObject):
         cfg = self.config()
         if cfg is None:
             return
+        self._side_fids = set(changed) | {fid for fid in added if fid not in deleted}
+        try:
+            self._process_ranges(cfg, changed, added, deleted, cache)
+        finally:
+            self._update_sides(cfg)
+
+    def _update_sides(self, cfg):
+        """Left/right ZIP, MSAG community, ESN… of new, split, and moved roads, read from the
+        polygons chosen under Settings, Sides (the same as Calculate sides, for these roads only)."""
+        fids = [fid for fid in getattr(self, "_side_fids", ()) if fid is not None]
+        self._side_fids = set()
+        if not fids or not getattr(cfg.edit, "auto_sides", True) or not alive(self.layer):
+            return
+        try:
+            from .project_config import load_project_config
+            pcfg = load_project_config()
+            if not (pcfg.addresses.attribution_rules or []):
+                return
+            from .addressing.engine import attribute_centerline_sides
+            from .addressing.side_split import attribution_context
+            live = {f.id() for f in self.layer.getFeatures(
+                QgsFeatureRequest().setFilterFids(list(fids)).setNoAttributes())}
+            if not live:
+                return
+            self._busy = True
+            try:
+                n, crossings = attribute_centerline_sides(attribution_context(self.layer, cfg, pcfg),
+                                                          list(live))
+            finally:
+                self._busy = False
+            if crossings:
+                self.notify("Info", f"{len({c[0] for c in crossings})} road(s) cross a ZIP, MSAG, or ESN "
+                                    "boundary part-way: use Split where side changes (Settings, Sides).")
+        except Exception as exc:  # noqa: BLE001 - never break the user's edit session
+            self.notify("Warning", f"Road sides (ZIP, MSAG, ESN) were not filled: {exc}")
+
+    def _process_ranges(self, cfg, changed, added, deleted, cache):
         acc = FieldAccessor(self.layer, cfg)
         if acc.missing(RANGE_FIELDS):
             self._fill_added(cfg, added, deleted)
@@ -174,6 +211,7 @@ class LayerWatcher(QObject):
                 return
             groups, new_roads = self._classify(cfg, acc, changed, added)
             if groups:
+                self._side_fids.update(m for ms in groups.values() for m in ms)
                 if cfg.edit.auto_rerange_split:
                     self._handle_split(cfg, acc, groups, cache)
                 elif cfg.edit.auto_nguid_new:
@@ -279,6 +317,7 @@ class LayerWatcher(QObject):
             rep = split_at_new_roads(self.layer, cfg, new_roads)
         finally:
             self._busy = False
+        self._side_fids.update(rep.get("affected", []))
         if rep["split_existing"] or rep["split_new"]:
             msg = (f"New intersection: split {rep['split_existing']} existing centerline(s)"
                    + (f" and {rep['split_new']} new road(s)" if rep["split_new"] else "")
@@ -489,7 +528,7 @@ class WatcherManager:
         cfg = load_from_layer(layer)
         wanted = cfg is not None and (cfg.edit.auto_rerange_split or cfg.edit.auto_merge or
                                       cfg.edit.geometry_edit_action != "none" or cfg.edit.auto_nguid_new or
-                                      cfg.edit.split_on_new_intersection)
+                                      cfg.edit.split_on_new_intersection or cfg.edit.auto_sides)
         lid = layer.id()
         if wanted and lid not in self.watchers:
             self.watchers[lid] = LayerWatcher(layer, self.notify)

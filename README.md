@@ -14,7 +14,7 @@ It follows the NENA NG9-1-1 layout for road centerlines and site/structure addre
 |---|---|
 | **Works with** | QGIS 3.34 or newer, including QGIS 4 |
 | **Extra software** | None |
-| **Version** | 3.6.7 |
+| **Version** | 3.6.8 |
 | **License** | [GPL-2.0-or-later](LICENSE) |
 | **Source** | https://github.com/pwizzle77-cmd/qgis-nena-addressing-tools |
 
@@ -201,6 +201,8 @@ A road is often a boundary, so its left and right side can be in different ZIP c
 3. Click **Calculate sides** to write the values onto both sides of every road.
 4. Where a boundary crosses a road part-way, **Split where side changes** cuts the road there.
 
+After that, **new and moved roads fill their own sides**: when you add a road (including **Draw road**), split one, or change its shape, its left and right values are read from these polygons. Turn this off with **Fill ZIP, MSAG, ESN… sides on new and moved roads** under Settings → Editing.
+
 New addresses copy the values from their side of the road, so do this before placing addresses.
 
 ### 6. Drop-down lists — NENA ▾ → Lookup tables
@@ -277,6 +279,7 @@ The default is **ranging by distance** (Interval, one number every 5.28 ft ≈ 1
 | **After reshape / vertex edit** | Do nothing; recompute To by distance; or re-derive from address points | Do nothing |
 | **Manage field split policies** | Ranges are copied to both pieces, NGUID is cleared on the new piece | On |
 | **Give new and split-off features a new NGUID** | Uses the agency identifier from step 3 | On |
+| **Fill ZIP, MSAG, ESN… sides on new and moved roads** | Reads each side from the polygons in step 5 when a road is added, split, or reshaped | On |
 
 ### 11. Address layers — NENA ▾ → Addresses
 
@@ -643,6 +646,7 @@ If the number falls outside the segment's From–To on that side, the dialog tel
 Under **Settings → Sides**, pick your ZIP, MSAG community, and ESN polygon layers. A road is often a boundary, so left and right can differ.
 
 - **Calculate sides** writes those values to each side of the road.
+- **New and moved roads** get their side values automatically: adding a road, **Draw road**, splitting, and reshaping all read both sides from the polygons. A road that crosses a boundary part-way is reported; use **Split where the side changes** on it.
 - **Split where the side changes** cuts the road where a boundary crosses it, and updates the addresses on those pieces.
 - **Copy road side** gives existing address points the values from their side of the road.
 - New addresses copy their side automatically.
@@ -702,6 +706,7 @@ Turn these on or off under **Settings → Editing**.
 | **Merge** roads | With **Combine ranges after Merge** on, the merged road gets the lowest From and highest To. *Select the pieces before you merge.* |
 | **Reshape** a road | Can recompute the high number from the new length, or from nearby addresses |
 | Split with another tool | **Redistribute** spreads the combined range over the selected pieces |
+| **Add**, **split**, or **move/reshape** a road | Fills its left and right ZIP, MSAG community, ESN, and any other side values from the polygons under **Settings → Sides** (one undo step of its own) |
 
 **IDs:** enter your agency ID under **Settings → Editing**. **Fill empty** gives roads without one a NENA ID. Pieces created by a split always get a new ID.
 
@@ -850,6 +855,7 @@ To see one feature's history, filter the history table by its ID and sort by ver
 
 ## What's new
 
+- **3.6.8** — New and moved roads fill their own sides: adding a road (including **Draw road**), splitting one, or changing its shape writes its left and right ZIP, MSAG community, ESN, and other side values from the polygons under **Settings → Sides**. Before, only **Calculate sides** did this. On by default; turn it off under **Settings → Editing**.
 - **3.6.7** — New **How to configure** section in this guide: every setting for streets, sides, ranges, and addressing, with a checklist. New defaults: ranging is **by distance** (Interval, 5.28 ft per number), and new addresses use **the centerline's own Parity_L / Parity_R first** (your left/right setting is used when the road has none). Layers and projects set up earlier keep their saved choices.
 - **3.6.5** — Code clean-up for the QGIS plugin repository's security and quality scan. Nothing changes in how the plugin works.
 - **3.6.4** — First release on the QGIS plugin repository (marked experimental). The plugin is now called **NENA Addressing and RCL Tools**. The plugin's folder (its ID in QGIS) is now `nena_addressing_and_rcl_tools`; remove an older `nena_rcl_tools` copy when you install this one. New **Draw road** button in the Streets window: pick a street, draw the line, and the new road is named and ranged by distance (the same spacing as your house numbers). After **Add…**, the plugin offers to draw the new street right away. Drop-down lists are real drop-downs again; they had turned into text boxes with suggestions, which made fields such as St_PosTyp look like they had no list. Fixed: creating a new schema in a GeoPackage stopped with a `createFeature` error on QGIS 4. Fixed: saving new access points showed a false "Cannot delete these access points" warning. Fixed: repeated "wrapped C/C++ object has been deleted" warnings after a layer was removed or the project reloaded.

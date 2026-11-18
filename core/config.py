@@ -90,6 +90,7 @@ class EditSettings:
     geometry_edit_action: str = GEOM_NONE
     manage_split_policies: bool = True      # set Duplicate split policy on range fields, Unset on NGUID
     auto_nguid_new: bool = True             # give new / split-off features a fresh NGUID
+    auto_sides: bool = True                 # ZIP / MSAG / ESN … sides from Settings, Sides on new and moved roads
     agency_id: str = ""                     # e.g. "psap.example.gov" used in NGUIDs and DiscrpAgID
     nguid_format: str = "urn"               # urn | legacy
     nguid_local_id: str = "uuid"            # uuid | fid

@@ -105,7 +105,8 @@ def split_at_new_roads(layer: QgsVectorLayer, cfg: PluginConfig, new_fids: Seque
     Split existing centerlines (and, at crossings, the new roads) and re-range.
     Runs in its own edit command. Returns a small report.
     """
-    report = {"split_existing": 0, "new_pieces": 0, "split_new": 0, "anchors": 0, "details": []}
+    report = {"split_existing": 0, "new_pieces": 0, "split_new": 0, "anchors": 0, "details": [],
+              "affected": []}
     if not new_fids:
         return report
     tol = gu.metres_to_layer_units(max(cfg.ranging.snap_tolerance_m, 0.05), layer.crs())
@@ -127,6 +128,7 @@ def split_at_new_roads(layer: QgsVectorLayer, cfg: PluginConfig, new_fids: Seque
             if len(pieces) < 2:
                 continue
             new_ids, ranges, used = apply_piece_split(layer, cfg, acc, feat, pieces, stamp)
+            report["affected"] += [fid] + list(new_ids)
             report["new_pieces"] += len(new_ids)
             report["anchors"] += used
             if fid in existing:

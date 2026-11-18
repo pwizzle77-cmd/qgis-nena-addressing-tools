@@ -489,3 +489,35 @@ def test_segment_parity_can_win_when_asked(world):
     pcfg.addresses.segment_parity_wins = True
     plan = E.plan_address(world["ctx"], P(50, 0), P(50, 20))
     assert plan.parity == "E" and plan.result.number % 2 == 0
+
+
+def test_new_and_moved_roads_get_their_sides_from_the_polygons(world):
+    from nena_addressing_and_rcl_tools.core.split_handler import LayerWatcher
+    from qgis.core import QgsFeature
+    rcl = world["rcl"]
+    rcl.startEditing()
+    msgs = []
+    w = LayerWatcher(rcl, lambda lvl, t: msgs.append((lvl, t)))
+    # a new road drawn inside TOWN A, with empty side values
+    nf = QgsFeature()
+    nf.setAttributes(["Pine", "Rd", "", "", None, None, None, None, "", "", "", ""])
+    nf.setGeometry(QgsGeometry.fromPolylineXY([P(-100, 300), P(-50, 300)]))
+    rcl.beginEditCommand("Add feature")
+    rcl.addFeature(nf)
+    rcl.endEditCommand()
+    assert attr(rcl, nf.id(), "MSAGComm_L") == "TOWN A" and attr(rcl, nf.id(), "MSAGComm_R") == "TOWN A"
+    # an existing road moved into TOWN B picks up the new side values
+    rcl.beginEditCommand("Move feature")
+    rcl.changeGeometry(2, QgsGeometry.fromPolylineXY([P(300, 0), P(400, 0)]))
+    rcl.endEditCommand()
+    assert attr(rcl, 2, "MSAGComm_L") == "TOWN B" and attr(rcl, 2, "MSAGComm_R") == "TOWN B"
+    assert not [m for m in msgs if m[0] == "Warning"]
+    # switched off: a moved road keeps what it had
+    cfg = world["cfg"]
+    cfg.edit.auto_sides = False
+    C.save_to_layer(rcl, cfg)
+    rcl.beginEditCommand("Move feature")
+    rcl.changeGeometry(2, QgsGeometry.fromPolylineXY([P(-300, 0), P(-200, 0)]))
+    rcl.endEditCommand()
+    assert attr(rcl, 2, "MSAGComm_L") == "TOWN B"
+    w.detach()

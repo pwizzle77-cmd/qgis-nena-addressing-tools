@@ -42,8 +42,12 @@ class EditTab(QWidget):
         self.chk_new_int.toggled.connect(self.chk_crossings.setEnabled)
         self.chk_policies = QCheckBox("Manage field split policies (duplicate ranges, unset NGUID)")
         self.chk_nguid_new = QCheckBox("Give new and split-off features a new NGUID")
+        self.chk_sides = QCheckBox("Fill ZIP, MSAG, ESN… sides on new and moved roads (Settings, Sides)")
+        self.chk_sides.setToolTip(
+            "When a road is added, split, or its shape changes, its left and right values are read from "
+            "the polygon layers chosen under Settings, Sides.")
         for w in (self.chk_split, self.chk_merge, self.chk_policies, self.chk_nguid_new,
-                  self.chk_new_int, self.chk_crossings):
+                  self.chk_new_int, self.chk_crossings, self.chk_sides):
             w.toggled.connect(lambda *_: self.settingsChanged.emit())
         self.cb_geom.currentIndexChanged.connect(lambda *_: self.settingsChanged.emit())
         self.cb_split_method.currentIndexChanged.connect(lambda *_: self.settingsChanged.emit())
@@ -55,6 +59,7 @@ class EditTab(QWidget):
         f.addRow("After reshape / vertex edit", self.cb_geom)
         f.addRow(self.chk_policies)
         f.addRow(self.chk_nguid_new)
+        f.addRow(self.chk_sides)
         f.addRow(hint("Undo once restores the ranges. Undo again restores the split. "
                       "Select the roads before a merge so their ranges are known."))
         b = QPushButton("Apply split policies")
@@ -106,7 +111,7 @@ class EditTab(QWidget):
     def load(self, cfg: C.PluginConfig):
         e = cfg.edit
         widgets = (self.chk_split, self.chk_merge, self.chk_policies, self.chk_nguid_new, self.cb_geom,
-                   self.cb_split_method, self.chk_new_int, self.chk_crossings)
+                   self.cb_split_method, self.chk_new_int, self.chk_crossings, self.chk_sides)
         for w in widgets:
             w.blockSignals(True)
         self.chk_split.setChecked(e.auto_rerange_split)
@@ -118,6 +123,7 @@ class EditTab(QWidget):
         set_combo_data(self.cb_geom, e.geometry_edit_action)
         self.chk_policies.setChecked(e.manage_split_policies)
         self.chk_nguid_new.setChecked(e.auto_nguid_new)
+        self.chk_sides.setChecked(e.auto_sides)
         self.ed_agency.setText(e.agency_id)
         set_combo_data(self.cb_format, e.nguid_format)
         set_combo_data(self.cb_local, e.nguid_local_id)
@@ -134,6 +140,7 @@ class EditTab(QWidget):
         e.geometry_edit_action = self.cb_geom.currentData()
         e.manage_split_policies = self.chk_policies.isChecked()
         e.auto_nguid_new = self.chk_nguid_new.isChecked()
+        e.auto_sides = self.chk_sides.isChecked()
         e.agency_id = self.ed_agency.text().strip()
         e.nguid_format = self.cb_format.currentData()
         e.nguid_local_id = self.cb_local.currentData()
