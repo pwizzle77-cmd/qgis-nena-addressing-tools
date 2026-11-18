@@ -5,7 +5,7 @@ import os
 
 from qgis.core import QgsProject, QgsVectorLayer, QgsWkbTypes
 from qgis.gui import QgsProjectionSelectionWidget
-from qgis.PyQt.QtWidgets import (QCheckBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QGroupBox,
+from qgis.PyQt.QtWidgets import (QCheckBox, QDialogButtonBox, QFileDialog, QFormLayout, QGroupBox,
                                  QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMessageBox, QPushButton,
                                  QScrollArea, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 

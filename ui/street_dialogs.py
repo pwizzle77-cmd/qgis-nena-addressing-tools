@@ -2,7 +2,7 @@
 """Dialogs for master street names: edit/rename, build from centerlines, name check results."""
 
 from qgis.PyQt.QtCore import Qt, pyqtSignal
-from qgis.PyQt.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QCompleter, QDialog, QDialogButtonBox,
+from qgis.PyQt.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QCompleter, QDialogButtonBox,
                                  QFormLayout, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QListWidget,
                                  QPushButton, QTableWidget, QTableWidgetItem, QTreeWidget, QTreeWidgetItem,
                                  QVBoxLayout)

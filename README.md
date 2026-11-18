@@ -62,6 +62,12 @@ It follows the NENA NG9-1-1 layout for road centerlines and site/structure addre
 
 ## Install
 
+**From QGIS (easiest):** go to **Plugins → Manage and Install Plugins → All**, search for **NENA Addressing Tools**, and click **Install Plugin**.
+
+**From a zip:** download the zip from the [releases page](https://github.com/pwizzle77-cmd/qgis-nena-addressing-tools/releases), then use **Plugins → Manage and Install Plugins → Install from ZIP**. The zip has `nena_rcl_tools/metadata.txt` at the top.
+
+**By hand:**
+
 1. Copy the plugin folder and name the copy **`nena_rcl_tools`**. The folder must contain `metadata.txt`.
 2. Put the copy in your QGIS plugins folder:
 
@@ -72,8 +78,6 @@ It follows the NENA NG9-1-1 layout for road centerlines and site/structure addre
 
 3. Restart QGIS.
 4. Go to **Plugins → Manage and Install Plugins → Installed** and tick **NENA Addressing Tools**.
-
-**Installing from a zip?** The zip must have `nena_rcl_tools/metadata.txt` at the top. Use **Plugins → Manage and Install Plugins → Install from ZIP**.
 
 When it's on, you'll see the **NENA Addressing Tools** toolbar and a **Vector → NENA Addressing Tools** menu.
 
@@ -688,3 +692,13 @@ cmd /c rmdir "$env:TEMP\nena_py\nena_rcl_tools"
 > ⚠️ Remove the junction with `cmd /c rmdir`. Deleting it in File Explorer can delete your source folder.
 
 The NENA field list is in [`docs/NENA_SCHEMA.md`](docs/NENA_SCHEMA.md).
+
+### Make the release zip
+
+```
+python scripts/make_zip.py
+```
+
+This writes `dist/nena_rcl_tools-<version>.zip` with one top folder, `nena_rcl_tools/`. Tests, screenshots, and git files are left out. Upload that zip at [plugins.qgis.org](https://plugins.qgis.org/plugins/add/) (version number from `metadata.txt`).
+
+Found a bug or want a feature? [Open an issue](https://github.com/pwizzle77-cmd/qgis-nena-addressing-tools/issues).

@@ -3,7 +3,7 @@
 
 from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtGui import QGuiApplication
-from qgis.PyQt.QtWidgets import (QAbstractItemView, QComboBox, QDialog, QDialogButtonBox, QFormLayout,
+from qgis.PyQt.QtWidgets import (QAbstractItemView, QComboBox, QDialogButtonBox, QFormLayout,
                                  QHBoxLayout, QHeaderView, QLabel, QLineEdit, QPlainTextEdit, QPushButton,
                                  QSpinBox, QTableWidget, QTableWidgetItem, QVBoxLayout)
 

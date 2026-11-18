@@ -11,7 +11,7 @@ Down) to change the order. Every change is saved straight away.
 
 from qgis.PyQt.QtCore import Qt, QTimer, pyqtSignal
 from qgis.PyQt.QtGui import QBrush, QColor
-from qgis.PyQt.QtWidgets import (QAbstractItemView, QComboBox, QDialog, QDialogButtonBox, QGroupBox,
+from qgis.PyQt.QtWidgets import (QAbstractItemView, QComboBox, QDialogButtonBox, QGroupBox,
                                  QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMessageBox, QPushButton,
                                  QSplitter, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 from qgis.gui import QgsMapLayerComboBox

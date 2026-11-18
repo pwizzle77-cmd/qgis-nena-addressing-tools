@@ -2,17 +2,18 @@
 name=NENA Addressing Tools
 qgisMinimumVersion=3.34
 qgisMaximumVersion=4.99
-description=NG9-1-1 (NENA-STA-006) addressing tools: click-to-address with driveways, master street names with cascading renames, road centerline address ranging, re-ranging on split/merge/new intersections, and validation.
-about=Datasource-independent NG9-1-1 addressing tools (GeoPackage, PostGIS, SQL Server, Oracle, shapefile, ...).
-    Keep one master list of street names that centerlines and address points link to by StreetID; renames cascade,
-    duplicates are blocked by a configurable county-wide or per-community rule.
-    Map your fields to NENA-STA-006 attributes, auto-range left/right FROM/TO addresses (hundred-block,
-    interval, proportional or from address points) with parity handling, automatically redistribute ranges
-    when a centerline is split or merged, and validate for gaps, overlaps, parity, direction, domain and
-    NGUID problems. All edits go through the edit buffer and are undoable. Pure PyQGIS, no extra dependencies.
+description=NG9-1-1 (NENA) addressing for counties and 911 authorities: master street names, road centerline address ranges, click-to-place addresses, and data checks.
+about=Day-to-day 911 addressing in QGIS, following the NENA NG9-1-1 layout for road centerlines and site/structure address points.
+    - Keep one master list of street names. Roads and addresses link to it by StreetID, renames update every linked feature, and duplicates are blocked by a county-wide or per-community rule.
+    - Range road centerlines (hundred-block, distance, proportional, or from address points). Ranges are divided automatically when you split, merge, or add a road at an intersection.
+    - Place an address by clicking the road and then the building: the house number, side, ZIP, ESN, and community are filled in. Place apartment and townhome units under one number.
+    - Draw a new road for a street name and it is named and ranged for you.
+    - Drop-down lists for street types, communities, ZIP codes, ESNs, and other fields, so values are entered the same way every time.
+    - Check for range gaps, overlaps, wrong odd/even sides, missing values, and MSAG mismatches before you submit.
+    Works with GeoPackage, file geodatabase, shapefile, PostgreSQL/PostGIS, SQL Server, and other QGIS data sources. Every edit is undoable. Pure PyQGIS, no extra installs. Runs on QGIS 3.34 or newer, including QGIS 4.
 version=3.6.4
-author=NENA RCL Tools contributors
-email=noreply@example.com
+author=Charles
+email=pwizzle77@gmail.com
 changelog=3.6.4 - Draw road for a master street name: the new centerline is named and ranged by distance. Lookup drop-downs are real drop-downs (not text boxes). Fixed the QGIS 4 schema-creation error, a false access-point delete warning when saving, and repeated deleted-layer warnings.
     3.6.3 - Place address saves an access point 10 feet straight off the road click, on the building's side, linked to the address and the centerline. The driveway checkbox is removed. Draw driveway remains the tool for the path.
     3.6.2 - House numbers follow the click from the start of the line. A SQL Server float coordinate was saved as a whole degree, so every existing address looked like it sat at the start of the street and the new number was pushed up to the last house.
@@ -41,7 +42,7 @@ changelog=3.6.4 - Draw road for a master street name: the new centerline is name
     1.2.0 - Auto-split existing centerlines where a newly digitized road creates an intersection (T or crossing) and re-range the sections so numbering continues; option on by default.
     1.1.0 - Split & Re-range map tool (one undo step); split re-ranging anchored to address points near the split; NENA field templates (GeoPackage/shapefile/GeoJSON/JSON/CSV or project layer); find & select overlapping ranges.
     1.0.0 - First release: field mapping, auto-ranging (hundred-block, interval, proportional, address points), split/merge re-ranging, validation, NGUID tools.
-tags=nena,ng911,street names,msag,address points,site structure address points,driveways,9-1-1,e911,addressing,road centerline,address ranges,geocoding,routing,validation
+tags=nena,ng911,qgis4,street names,msag,address points,site structure address points,driveways,9-1-1,e911,addressing,road centerline,address ranges,geocoding,routing,validation
 homepage=https://github.com/pwizzle77-cmd/qgis-nena-addressing-tools
 repository=https://github.com/pwizzle77-cmd/qgis-nena-addressing-tools
 tracker=https://github.com/pwizzle77-cmd/qgis-nena-addressing-tools/issues
