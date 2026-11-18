@@ -8,9 +8,9 @@ and the edit watchers that re-range centerlines after split / merge.
 
 import contextlib
 
-from qgis.PyQt.QtCore import QSize, Qt, QTimer
+from qgis.PyQt.QtCore import Qt, QTimer
 from qgis.PyQt.QtGui import QIcon
-from qgis.PyQt.QtWidgets import QMenu, QSizePolicy, QToolButton, QWidget
+from qgis.PyQt.QtWidgets import QMenu, QToolButton
 
 from .compat import QAction, msg_level
 from .core.access_guard import AccessGuard
@@ -28,22 +28,6 @@ from .core.layer_access import ConfigError
 from .ui.widgets import icon
 
 MENU = "&NENA Addressing and RCL Tools"
-
-
-class _ToolbarSpacer(QWidget):
-    """Leading spacer so the tools sit at the right of a full-width toolbar row."""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        policy = QSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        policy.setHorizontalStretch(1)
-        self.setSizePolicy(policy)
-
-    def sizeHint(self):
-        return QSize(0, 0)
-
-    def minimumSizeHint(self):
-        return QSize(0, 0)
 
 
 class NenaRclPlugin:
@@ -69,12 +53,9 @@ class NenaRclPlugin:
     def initGui(self):  # noqa: N802 - QGIS API name
         self.toolbar = self.iface.addToolBar(TITLE)
         self.toolbar.setObjectName("NenaRclToolsToolbar")   # kept so QGIS remembers the toolbar position
-        self.toolbar.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.toolbar.setMovable(True)
         # Short names under the icons, so nothing needs a hover to explain it.
         self.toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
-        self._toolbar_spacer = _ToolbarSpacer(self.toolbar)
-        self.toolbar.addWidget(self._toolbar_spacer)
 
         self.watchers = WatcherManager(self._notify)
         self.street_watchers = StreetWatcherManager(self._notify)
@@ -173,23 +154,11 @@ class NenaRclPlugin:
         from qgis.core import QgsProject
         QgsProject.instance().readProject.connect(self._project_loaded)
         self.iface.currentLayerChanged.connect(self._sync_auto_action)
-        self._place_toolbar()
-        # QGIS restores the window after initGui. ArcSkin then hides every toolbar and
-        # builds its ribbon. Place this bar again once that has finished.
-        QTimer.singleShot(0, self._place_toolbar)
-        QTimer.singleShot(800, self._place_toolbar)
-        QTimer.singleShot(2000, self._place_toolbar)
-        try:
-            self.iface.initializationCompleted.connect(self._place_toolbar_soon)
-        except (TypeError, RuntimeError):
-            pass
+        # A plain toolbar, like Parcel Fabric's: QGIS remembers where it goes, and
+        # ribbon interfaces (Workspace Ribbon) turn it into a tab of their own.
         self._dock()
 
     def unload(self):
-        try:
-            self.iface.initializationCompleted.disconnect(self._place_toolbar_soon)
-        except (TypeError, RuntimeError):
-            pass
         try:
             self.iface.currentLayerChanged.disconnect(self._sync_auto_action)
         except (TypeError, RuntimeError):
@@ -366,60 +335,6 @@ class NenaRclPlugin:
                 menu.addAction(self.act_docked)
         self.iface.vectorMenu().addMenu(menu)
         self.menu = menu
-
-    def _ensure_spacer_first(self):
-        tb = self.toolbar
-        spacer = getattr(self, "_toolbar_spacer", None)
-        if tb is None or spacer is None:
-            return
-        acts = tb.actions()
-        spacer_act = next((a for a in acts if tb.widgetForAction(a) is spacer), None)
-        if spacer_act is None:
-            if acts:
-                tb.insertWidget(acts[0], spacer)
-            else:
-                tb.addWidget(spacer)
-            return
-        if acts and acts[0] is not spacer_act:
-            tb.removeAction(spacer_act)
-            first = tb.actions()[0] if tb.actions() else None
-            if first is not None:
-                tb.insertWidget(first, spacer)
-            else:
-                tb.addWidget(spacer)
-
-    def _place_toolbar_soon(self, *_args):
-        QTimer.singleShot(0, self._place_toolbar)
-        QTimer.singleShot(600, self._place_toolbar)
-
-    def _place_toolbar(self):
-        """Own full-width row at the top of the window, with the tools at the right.
-
-        ArcSkin hides plugin toolbars and puts a ribbon in the top area. This bar
-        is placed on the row above that ribbon (or above the first QGIS toolbar)
-        and shown again after the skin hides it.
-        """
-        tb = self.toolbar
-        if tb is None:
-            return
-        main = self.iface.mainWindow()
-        if main is None:
-            return
-        self._ensure_spacer_first()
-        area = Qt.ToolBarArea.TopToolBarArea
-        anchor = main.findChild(type(tb), "ArcSkinRibbonBar")
-        if anchor is None or anchor.parent() is not main:
-            anchor = main.findChild(type(tb), "mFileToolBar")
-        if anchor is None or anchor.parent() is not main or main.toolBarArea(anchor) != area:
-            anchor = next((bar for bar in main.findChildren(type(tb))
-                           if bar is not tb and bar.parent() is main and main.toolBarArea(bar) == area), None)
-        if anchor is not None:
-            main.insertToolBar(anchor, tb)
-            if not main.toolBarBreak(anchor):
-                main.insertToolBarBreak(anchor)
-        else:
-            main.addToolBar(area, tb)
-        tb.setVisible(True)
 
     def _catalog_host(self, main, dock):
         from qgis.PyQt.QtWidgets import QDockWidget
