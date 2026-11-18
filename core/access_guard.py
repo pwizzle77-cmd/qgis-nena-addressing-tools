@@ -2,6 +2,11 @@
 """
 Stop an access point from being deleted while an address or driveway still uses it.
 
+Saving or rolling back the layer is not a delete: QGIS reports the
+unsaved (temporary) feature ids as deleted while it swaps them for the
+saved ones, so the guard stands aside between ``beforeCommitChanges`` /
+``beforeRollBack`` and the matching ``after…`` signal.
+
 QGIS commits a delete after ``featuresDeleted``. The edit buffer's deleted-id
 set cannot be put back from that signal, so a blocked delete is undone on the
 next turn of the event loop and a message explains why.
@@ -54,6 +59,7 @@ class AccessGuard(QObject):
         self._conns = []
         self._cache = {}
         self._busy = False
+        self._saving = False
         project = QgsProject.instance()
         project.readProject.connect(self.refresh)
         project.layersAdded.connect(self.refresh)
@@ -91,6 +97,18 @@ class AccessGuard(QObject):
         self._connect(layer, getattr(layer, "featureAdded", None), lambda fid, lyr=layer: self._remember(lyr, fid))
         changed = getattr(layer, "attributeValueChanged", None)
         self._connect(layer, changed, lambda fid, *_rest, lyr=layer: self._remember(lyr, fid))
+        for name in ("beforeCommitChanges", "beforeRollBack"):
+            self._connect(layer, getattr(layer, name, None), lambda *_a: self._set_saving(True))
+        for name in ("afterCommitChanges", "afterRollBack", "commitError"):
+            self._connect(layer, getattr(layer, name, None), lambda *_a, lyr=layer: self._saved(lyr))
+
+    def _set_saving(self, value):
+        self._saving = value
+
+    def _saved(self, layer):
+        """Saved or rolled back: ids changed, so read them again."""
+        self._saving = False
+        self._cache = self._read_cache(layer)
 
     def _read_cache(self, layer):
         index = layer.fields().indexFromName("AccessPointID")
@@ -119,7 +137,7 @@ class AccessGuard(QObject):
             self._cache.pop(fid, None)
 
     def _deleted(self, layer, fids):
-        if self._busy or GuardState.suppress:
+        if self._busy or self._saving or GuardState.suppress:
             for fid in fids or []:
                 self._cache.pop(fid, None)
             return
@@ -144,11 +162,10 @@ class AccessGuard(QObject):
             stack = layer.undoStack() if hasattr(layer, "undoStack") else None
             if stack is not None and stack.canUndo():
                 stack.undo()
-            elif hasattr(layer, "undo"):
-                layer.undo()
+                self.notify("Warning", message)
+            # nothing to undo (e.g. the layer was just saved): stay quiet rather than
+            # claim a delete was undone
         except Exception as exc:  # noqa: BLE001
             self.notify("Warning", f"The access point is still in use, and the delete could not be undone: {exc}")
-        else:
-            self.notify("Warning", message)
         self._busy = False
         self._cache = self._read_cache(layer)

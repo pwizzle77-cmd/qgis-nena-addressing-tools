@@ -599,7 +599,7 @@ def add_rows(layer, rows: Sequence[dict]) -> int:
     """Add lookup rows and save them (unless the layer was already being edited)."""
     if layer is None or not rows:
         return 0
-    from qgis.core import QgsVectorLayerUtils
+    from qgis.core import QgsGeometry, QgsVectorLayerUtils
     from .layer_access import ensure_editable
     started = ensure_editable(layer)
     layer.beginEditCommand("NENA: add lookup values")
@@ -610,7 +610,8 @@ def add_rows(layer, rows: Sequence[dict]) -> int:
             index = layer.fields().indexFromName(name)
             if index >= 0:
                 attrs[index] = value
-        feature = QgsVectorLayerUtils.createFeature(layer, None, attrs, layer.createExpressionContext())
+        # QGIS 4 needs an empty geometry here, not None (the lookup tables have no geometry)
+        feature = QgsVectorLayerUtils.createFeature(layer, QgsGeometry(), attrs, layer.createExpressionContext())
         if layer.addFeature(feature):
             added += 1
     if not added:
@@ -702,7 +703,8 @@ def apply_dropdowns(pcfg, centerline=None, force: bool = False, dry_run: bool = 
                 "OrderByValue": False,
                 "OrderByField": True,
                 "OrderByFieldName": "SortOrder",
-                "UseCompleter": True,
+                # True turns the field into a text box with suggestions; False is a real drop-down list
+                "UseCompleter": False,
             }
         current = _widget_type(layer, index)
         if not force and current not in ("", "TextEdit", wanted):

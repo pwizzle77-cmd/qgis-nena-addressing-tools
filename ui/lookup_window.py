@@ -570,13 +570,14 @@ class LookupPage(QWidget):
             row["Parent"] = parent if parent is not None else self.cb_parent.currentText().split(" – ")[0].strip()
 
         def mutate(target):
-            from qgis.core import QgsVectorLayerUtils
+            from qgis.core import QgsGeometry, QgsVectorLayerUtils
             attrs = {}
             for field, value in row.items():
                 index = target.fields().indexFromName(field)
                 if index >= 0:
                     attrs[index] = value
-            feature = QgsVectorLayerUtils.createFeature(target, None, attrs, target.createExpressionContext())
+            feature = QgsVectorLayerUtils.createFeature(target, QgsGeometry(), attrs,
+                                                        target.createExpressionContext())
             return target.addFeature(feature)
 
         if self._edit("NENA: add lookup value", mutate):

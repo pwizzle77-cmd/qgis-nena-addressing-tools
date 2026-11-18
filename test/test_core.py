@@ -343,3 +343,28 @@ def test_overlap_fids():
     issues = V.find_overlaps(recs) + [V.Issue(3, V.ERROR, "PARITY_DOMAIN", "x")]
     assert V.overlap_fids(issues) == [1, 2]
     assert V.involved_fids(issues) == [1, 2, 3]
+
+
+def test_interval_5_28_ft_ranges_a_2112_ft_road_100_to_500():
+    # 2112 ft at one number per 5.28 ft = 400 numbers: 100 ... 499
+    mpn = R.to_meters(5.28, "feet")
+    b = R.interval_boundaries([R.to_meters(2112, "feet")], 100, mpn)
+    res = R.range_chain(b, {"L": ["O"], "R": ["E"]})
+    assert res["L"][0] == (101, 499, "O")
+    assert res["R"][0] == (100, 498, "E")
+
+
+
+def test_new_road_ranging_uses_house_number_spacing():
+    from nena_rcl_tools.core.config import RangingSettings
+    from nena_rcl_tools.core.project_config import ProjectConfig
+    from nena_rcl_tools.core.ranger import distance_overrides
+    pcfg = ProjectConfig()
+    pcfg.addresses.method, pcfg.addresses.distance_per_number, pcfg.addresses.distance_units = "distance", 5.28, "feet"
+    rs = RangingSettings()          # Ranging tab still on hundred-block
+    o = distance_overrides(pcfg, rs)
+    assert o["method"] == M_INTERVAL and o["interval_distance"] == 5.28 and o["interval_units"] == "feet"
+    pcfg.addresses.method = "interpolate"
+    rs.interval_distance = 3.2
+    rs.interval_units = "meters"
+    assert distance_overrides(pcfg, rs)["interval_distance"] == 3.2

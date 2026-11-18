@@ -162,7 +162,9 @@ class StreetsTab(QWidget):
                 ("Rename…", "Rename the selected street. Linked features follow.", self.rename),
                 ("Retire", "Mark the selected street retired", self.retire),
                 ("Assign to selected", "Write this street onto the selected centerlines", self.assign),
-                ("Select roads", "Select the centerlines that use this street", self.select))):
+                ("Select roads", "Select the centerlines that use this street", self.select),
+                ("Draw road", "Draw a new centerline for this street. Right-click to finish: it is named "
+                              "and ranged by distance automatically.", self.draw))):
             btn = QPushButton(text)
             btn.setToolTip(tip)
             btn.clicked.connect(lambda *_, s=slot: s())
@@ -416,9 +418,48 @@ class StreetsTab(QWidget):
                 return
             rec, warnings = svc.add_street(dlg.parts(), dlg.scope())
             self.refresh_list()
+            self._select_sid(rec.street_id)
             self.dock._msg(f"Added '{rec.full_name}'." + (" Note: similar names exist." if warnings else ""),
                            "Success")
+            if self.dock.layer is not None and QMessageBox.question(
+                    self, "Draw road", f"Draw '{rec.full_name}' on the map now?"
+                    ) == QMessageBox.StandardButton.Yes:
+                self._start_draw(rec.street_id, rec.full_name)
         self.dock._guard(do)
+
+    def _select_sid(self, sid):
+        for r in range(self.table.rowCount()):
+            it = self.table.item(r, 0)
+            if it is not None and it.data(Qt.ItemDataRole.UserRole) == sid:
+                self.table.selectRow(r)
+                self.table.scrollToItem(it)
+                return
+
+    def draw(self):
+        def do():
+            svc = self.service()
+            sid = self._selected_sid()
+            rec = svc.repo.by_id().get(sid)
+            if rec is None:
+                raise ConfigError("Street not found.")
+            self._start_draw(sid, rec.full_name)
+        self.dock._guard(do)
+
+    def _start_draw(self, sid, full_name):
+        from .draw_street_tool import DrawStreetTool
+        layer = self.dock._require_layer()
+        svc = self.service()
+        ll = svc.layer("centerline")
+        if ll is None or not ll.usable:
+            raise ConfigError(f"The centerline layer has no '{self.pcfg.streets.street_id_field}' field. "
+                              "Use 'Add to layers' first.")
+        if not layer.isEditable():
+            layer.startEditing()
+        iface = self.dock.iface
+        iface.setActiveLayer(layer)
+        self._draw_tool = DrawStreetTool(self.dock, layer, sid, full_name)
+        iface.mapCanvas().setMapTool(self._draw_tool)
+        self.dock._msg(f"Draw '{full_name}': click to add points, right-click to finish (Esc cancels).", "Info")
 
     def rename(self):
         def do():

@@ -21,7 +21,7 @@ from ..core.config import load_from_layer
 from ..core.layer_access import ConfigError
 from ..core.project_config import layer_for, load_project_config
 from ..core.streets import names as N
-from ..core.qt_safety import safe_disconnect
+from ..core.qt_safety import alive, safe_disconnect
 
 BLUE, RED, GREY = QColor(30, 110, 220), QColor(210, 40, 40), QColor(120, 120, 120)
 
@@ -67,7 +67,9 @@ class AddressOverlay:
         safe_disconnect(self.canvas, self.canvas.extentsChanged, self._reposition)
 
     def _disconnect(self):
-        if self.layer is not None:
+        # The layer may already be gone (removed, or the project reloaded):
+        # don't even read its signal through a stale handle.
+        if alive(self.layer):
             safe_disconnect(self.layer, self.layer.selectionChanged, self._on_selection)
         self.layer = None
 
@@ -108,7 +110,8 @@ class AddressOverlay:
 
     def _on_selection(self, *args):
         self.clear()
-        if self.layer is None:
+        if not alive(self.layer):
+            self.layer = None
             return
         ids = self.layer.selectedFeatureIds()
         if not ids:

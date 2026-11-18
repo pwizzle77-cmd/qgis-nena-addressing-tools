@@ -130,6 +130,20 @@ def collect_point_observations(line_layer: QgsVectorLayer, segs: Dict[Hashable, 
     return obs
 
 
+def distance_overrides(pcfg, rs: RangingSettings) -> dict:
+    """
+    Range by distance. Uses the house-number spacing when the Addresses
+    settings number by distance, else the Ranging tab's interval.
+    """
+    a = pcfg.addresses
+    if a.method == "distance" and float(a.distance_per_number or 0) > 0:
+        dist, units = float(a.distance_per_number), a.distance_units
+    else:
+        dist, units = rs.interval_distance, rs.interval_units
+    return {"method": M_INTERVAL, "interval_distance": dist, "interval_units": units,
+            "scope": SCOPE_CHAIN, "overwrite_existing": True}
+
+
 # ---------------------------------------------------------------------------
 class RangeEngine:
     """Compute and apply address ranges for a layer."""

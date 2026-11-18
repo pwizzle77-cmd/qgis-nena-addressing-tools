@@ -4,13 +4,17 @@
 
 Keep one clean list of street names, give your road centerlines their address ranges, and place new addresses by clicking on the map. The plugin also checks your data before you send it to your 911 authority or state.
 
+![Roads with direction arrows, From/To numbers at each end, and labelled address points](docs/images/map-ranges.png)
+
+*Roads show which way they run (green dot = start, red square = end) with the From/To numbers for each side. Address points are labelled with their house numbers.*
+
 It follows the NENA NG9-1-1 layout for road centerlines and site/structure address points. Your data can be in a GeoPackage, a file geodatabase, a shapefile, or any database you've connected in QGIS (PostgreSQL, SQL Server, and others).
 
 | | |
 |---|---|
 | **Works with** | QGIS 3.34 or newer, including QGIS 4 |
 | **Extra software** | None |
-| **Version** | 3.6.3 |
+| **Version** | 3.6.4 |
 | **License** | [GPL-2.0-or-later](LICENSE) |
 | **Source** | https://github.com/pwizzle77-cmd/qgis-nena-addressing-tools |
 
@@ -43,6 +47,7 @@ It follows the NENA NG9-1-1 layout for road centerlines and site/structure addre
 | You want to… | The plugin… |
 |---|---|
 | Stop misspelled and duplicate street names | Keeps one master street-name list. Rename a street once and every road and address using it updates. |
+| Draw a new road | Pick the street name, click **Draw road**, draw the line. It's named and ranged for you. |
 | Range your centerlines | Assigns From/To numbers by hundred-block, distance, length, or from existing address points. |
 | Add new addresses quickly | You click the road, then the building. The house number, side, ZIP, ESN, and community fill in for you. |
 | Number apartments and townhomes | Places many units under one house number: 1, 2, 3 or 101, 102 or A, B, C. |
@@ -112,6 +117,8 @@ This is the usual order for a county that already has road centerlines.
 
 Every button has its name under the icon.
 
+![The NENA Addressing Tools toolbar](docs/images/toolbar.png)
+
 | Button | What it does |
 |---|---|
 | **NENA ▾** | Opens a window (Streets, Addresses, Ranges, Check, Lookup tables, Schema and import, Settings), or **Style NENA layers** |
@@ -129,6 +136,10 @@ Every button has its name under the icon.
 | **Undo** | Removes the last address you placed |
 
 ### Windows
+
+Open any window from the **NENA ▾** button.
+
+![The NENA ▾ menu](docs/images/nena-menu.png)
 
 | Window | Use it to |
 |---|---|
@@ -234,7 +245,10 @@ These go on your **address points**, **both sides of your centerlines** (`_L` an
 
 ### Setting them up
 
-Open **NENA ▾ → Lookup tables**. The top of the window lists every drop-down, where it's stored, and how many fields use it. Lists shown in red are missing.
+Open **NENA ▾ → Lookup tables**.
+
+![The Lookup tables window with the Road types list](docs/images/lookup-tables.png)
+ The top of the window lists every drop-down, where it's stored, and how many fields use it. Lists shown in red are missing.
 
 1. **Create missing tables.** Makes any missing table in the same place as your address points (same GeoPackage, file geodatabase, or database) and fills it with standard values.
    - Tables that already exist are reconnected, not overwritten.
@@ -244,7 +258,7 @@ Open **NENA ▾ → Lookup tables**. The top of the window lists every drop-down
    - Fields are found by your field match, by NENA name, or by common older names like `PRETYPE` and `ZIP_L`.
    - If you set up a different widget on a field yourself, it's left alone unless you choose to replace it.
 
-Drop-downs are reapplied every time you open the project.
+Drop-downs are reapplied every time you open the project. Every list is a real drop-down: click the arrow and pick. You can also type the first letters to jump to a value.
 
 ### Editing a list
 
@@ -274,6 +288,8 @@ The plugin keeps **one master table of street names**. Roads and address points 
 
 Open **NENA ▾ → Streets**.
 
+![The Streets window](docs/images/streets-window.png)
+
 | Setting | What to choose |
 |---|---|
 | Master street names | An existing table, or **Create** to make one in a GeoPackage or database |
@@ -301,6 +317,25 @@ Each street row holds the name parts, the full name, a status (Active, Proposed,
 | **StreetID drop-down** | Makes the link a searchable list of active street names in the attribute form |
 | **Sync to features** | Copies the master name onto every linked road and address |
 | **Check names** | Lists duplicates, sound-alikes, missing links, and names out of sync |
+| **Select roads** | Selects the roads that use the chosen street |
+| **Draw road** | Draws a new road for the chosen street. See below |
+
+### Draw a new road for a street
+
+The fastest way to add a road: the name and the range are filled in for you.
+
+1. In **NENA ▾ → Streets**, pick the street in the list. (Just added a street with **Add…**? The plugin asks if you want to draw it right away.)
+2. Click **Draw road**. The centerline layer goes into edit mode.
+3. Click along the road **in the direction the numbers go up**. Snapping and Advanced Digitizing work as usual.
+4. **Right-click** to finish. Press **Esc** to cancel.
+
+When you finish, the plugin:
+
+- Writes the street's **StreetID** and name parts onto the new road.
+- Splits any road the new one ends on or crosses, if **Split at new intersections** is on (the same as drawing with the QGIS tool).
+- **Ranges the new road by distance**, using the same spacing as your house numbers (for example one number every 5.28 ft). A road 2,112 ft long gets 101–499 on the left and 100–498 on the right. If it connects to a road with the same name, numbering continues from that road.
+
+Click **Draw road** again for the next piece. Save the layer to keep it.
 
 Two things happen automatically. You can turn either off under **Settings → Street rules → When names change**:
 
@@ -425,12 +460,16 @@ Open **NENA ▾ → Ranges**.
 - Left and right follow that direction. Usually odd numbers are on the left and even on the right. Existing parity, including **Z** (no addresses), is kept unless you turn that off.
 - **Street chains** numbers connected pieces of the same street in order, so they don't overlap. **Each feature** numbers every piece on its own.
 
+![The Ranges window](docs/images/ranges-window.png)
+
 | Method | What you get | Good for |
 |---|---|---|
 | **Hundred-block** | Each piece gets the next block: 100–198/101–199, then 200–298/201–299… | City grids |
 | **Interval** | Numbers go up by distance (5.28 ft ≈ 1,000 per mile) | Rural distance-based addressing |
 | **Proportional** | Spreads a low–high range across the street by length, and can bend around existing addresses | Fitting existing numbers |
 | **From address points** | Builds the range from the house numbers near each piece | Data with good address points |
+
+> 💡 **Numbering by distance?** Ranging has its own method, separate from the house-number settings on the Addresses window. The Ranges window shows the current one (*Method: Hundred-block* above). If you want ranges to grow with distance, set **Method → Ranging method** to **Interval** and enter your distance (for example 5.28 ft). Hundred-block always gives each piece a full block (100–199), however long it is. **Draw road** always ranges by distance.
 
 **Range selected** and **Range layer** run as one undo step.
 
@@ -600,6 +639,8 @@ To see one feature's history, filter the history table by its ID and sort by ver
 ---
 
 ## What's new
+
+- **3.6.4** — New **Draw road** button in the Streets window: pick a street, draw the line, and the new road is named and ranged by distance (the same spacing as your house numbers). After **Add…**, the plugin offers to draw the new street right away. Drop-down lists are real drop-downs again; they had turned into text boxes with suggestions, which made fields such as St_PosTyp look like they had no list. Fixed: creating a new schema in a GeoPackage stopped with a `createFeature` error on QGIS 4. Fixed: saving new access points showed a false "Cannot delete these access points" warning. Fixed: repeated "wrapped C/C++ object has been deleted" warnings after a layer was removed or the project reloaded.
 
 - **3.6.3** — Place address saves an access point 10 feet straight off the road click, on the building's side, linked to the address and the centerline. Draw driveway is the tool for the path.
 - **3.6.2** — A new house number follows where you click, counting from the start of the line (the green dot). Coordinates stored in a SQL Server float column had been saved as whole degrees, so every existing address looked like it sat at the start of the street and the new number was pushed up to the last house.

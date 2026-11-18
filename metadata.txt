@@ -10,10 +10,11 @@ about=Datasource-independent NG9-1-1 addressing tools (GeoPackage, PostGIS, SQL 
     interval, proportional or from address points) with parity handling, automatically redistribute ranges
     when a centerline is split or merged, and validate for gaps, overlaps, parity, direction, domain and
     NGUID problems. All edits go through the edit buffer and are undoable. Pure PyQGIS, no extra dependencies.
-version=3.6.3
+version=3.6.4
 author=NENA RCL Tools contributors
 email=noreply@example.com
-changelog=3.6.3 - Place address saves an access point 10 feet straight off the road click, on the building's side, linked to the address and the centerline. The driveway checkbox is removed. Draw driveway remains the tool for the path.
+changelog=3.6.4 - Draw road for a master street name: the new centerline is named and ranged by distance. Lookup drop-downs are real drop-downs (not text boxes). Fixed the QGIS 4 schema-creation error, a false access-point delete warning when saving, and repeated deleted-layer warnings.
+    3.6.3 - Place address saves an access point 10 feet straight off the road click, on the building's side, linked to the address and the centerline. The driveway checkbox is removed. Draw driveway remains the tool for the path.
     3.6.2 - House numbers follow the click from the start of the line. A SQL Server float coordinate was saved as a whole degree, so every existing address looked like it sat at the start of the street and the new number was pushed up to the last house.
     3.6.1 - One-way tool marks selected centerlines B, FT, or TF for routing; one-way roads show red travel arrows in the NENA style.
     3.6.0 - House numbers are calculated on the clicked segment (from its From number and first point, or interpolated between its From/To). Odd/even always follows the settings; a disagreeing segment parity is reported. Reverse and re-range uses the parity settings.
