@@ -14,7 +14,7 @@ It follows the NENA NG9-1-1 layout for road centerlines and site/structure addre
 |---|---|
 | **Works with** | QGIS 3.34 or newer, including QGIS 4 |
 | **Extra software** | None |
-| **Version** | 3.6.10 |
+| **Version** | 3.6.11 |
 | **License** | [GPL-2.0-or-later](LICENSE) |
 | **Source** | https://github.com/pwizzle77-cmd/qgis-nena-addressing-tools |
 
@@ -370,6 +370,10 @@ Open any window from the **NENA ▾** button.
 Windows remember their size and position.
 
 **Rather keep them docked?** Tick **NENA ▾ → Dock the NENA windows in the side panel**. They'll open as tabs next to the Browser/Catalog instead of as separate windows.
+
+**Version and lookup tables out of the way.** When the plugin creates the version (history) tables and the lookup tables (road types, unit types, statuses, and domain values), it keeps them out of the Layers panel. They're still loaded, so change tracking and the drop-down lists keep working. To see them, untick **NENA ▾ → Hide version and lookup tables**; they come back in a group called **NENA support tables**. Tick it again to hide them. The choice is saved with the project.
+
+> Don't remove a version table from the project to get it out of the way: a removed table is no longer updated. Hide it instead.
 
 **Choosing the centerline layer:** each window has a **Centerline** picker at the top. It opens on the project's centerline, and it also follows the line layer that's active in the Layers panel. Version (history) tables, driveways, and the project's address, access-point, and street-name layers are left out of the picker, so you can't assign or draw streets into them by accident.
 
@@ -858,6 +862,7 @@ To see one feature's history, filter the history table by its ID and sort by ver
 
 ## What's new
 
+- **3.6.11** — The version (history) tables and lookup tables are hidden from the Layers panel when the plugin creates them. They stay loaded and keep working. Show or hide them with **NENA ▾ → Hide version and lookup tables**.
 - **3.6.10** — The **Centerline** picker leaves out version (history) tables, driveways, and the address, access-point, and street-name layers, and opens on the project's centerline, so streets can't be assigned or drawn into a version table by mistake. Splitting a road (QGIS split, the Split tool, or a new road meeting it) no longer gives the pieces ranges that are a little too high: with distance addressing the split falls where the house numbers are (From + distance ÷ spacing, the same spacing as Address rules), and the address points from the Addresses window anchor the split when none are set on Ranges → Method.
 - **3.6.9** — New roads are **Active** (road status `ACT`) with road class **Local** by default. Both are on **Settings → Defaults**, fill only empty fields, and can be changed or cleared. A project set up earlier gets these two defaults once.
 - **3.6.8** — New and moved roads fill their own sides: adding a road (including **Draw road**), splitting one, or changing its shape writes its left and right ZIP, MSAG community, ESN, and other side values from the polygons under **Settings → Sides**. Before, only **Calculate sides** did this. On by default; turn it off under **Settings → Editing**.

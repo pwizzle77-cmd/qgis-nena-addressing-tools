@@ -671,7 +671,15 @@ class NenaDock(QDockWidget):
         if fresh:
             self.style_layers(only=fresh, ask=False)
         self.sync_archive_option()
+        self._hide_support_tables()
         self.projectConfigSaved.emit()
+
+    def _hide_support_tables(self):
+        """New version and lookup tables stay out of the Layers panel unless the project says otherwise."""
+        from ..core.hidden_layers import set_support_hidden
+        pcfg = load_project_config()
+        if pcfg.display.hide_support_tables:
+            set_support_hidden(pcfg, True)
 
     def _schema_group(self, prj, name):
         from qgis.core import QgsLayerTreeGroup

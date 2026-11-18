@@ -651,6 +651,7 @@ class LookupPage(QWidget):
                     prj.addMapLayer(layer, False)
                     group.addLayer(layer)
             save_project_config(pcfg)
+            self.dock._hide_support_tables()
             self.report = L.apply_dropdowns(pcfg, self.dock.layer)
             self.load()
             wired = sum(1 for item in self.report if item["status"] == "wired")

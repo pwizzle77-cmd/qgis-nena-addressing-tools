@@ -128,6 +128,13 @@ class LookupSettings:
 
 
 @dataclass
+class DisplaySettings:
+    """How the plugin's own tables appear in the Layers panel."""
+
+    hide_support_tables: bool = True     # version and lookup tables stay loaded but out of the Layers panel
+
+
+@dataclass
 class StreetTypeSettings:
     """Street types for the name form. ``custom`` False means the built-in NENA/USPS list."""
 
@@ -145,6 +152,7 @@ class ProjectConfig:
     archive: ArchiveSettings = field(default_factory=ArchiveSettings)
     street_types: StreetTypeSettings = field(default_factory=StreetTypeSettings)
     lookups: LookupSettings = field(default_factory=LookupSettings)
+    display: DisplaySettings = field(default_factory=DisplaySettings)
 
     def to_json(self, indent=None) -> str:
         return json.dumps(asdict(self), indent=indent)
@@ -158,6 +166,7 @@ class ProjectConfig:
         _load(cfg.archive, (data or {}).get("archive") or {})
         _load_street_types(cfg.street_types, (data or {}).get("street_types"))
         _load(cfg.lookups, (data or {}).get("lookups") or {})
+        _load(cfg.display, (data or {}).get("display") or {})
         return cfg
 
     @classmethod
