@@ -10,6 +10,8 @@ moved away from the stored access point; hollow grey = no stored access
 point (inferred from the driveway, else the nearest point on the street).
 """
 
+import contextlib
+
 from qgis.core import Qgis, QgsFeatureRequest, QgsGeometry, QgsPointXY
 from qgis.gui import QgsMapCanvasItem, QgsRubberBand
 from qgis.PyQt.QtCore import QPointF, QRectF, Qt
@@ -175,7 +177,5 @@ class AddressOverlay:
                     text += f"  (range now: {plan.result.label})"
             except ConfigError:
                 pass
-        try:
+        with contextlib.suppress(Exception):  # labels are a nicety
             self.items.append(_Label(self.canvas, mp_access, text, color))
-        except Exception:  # noqa: BLE001 - labels are a nicety
-            pass

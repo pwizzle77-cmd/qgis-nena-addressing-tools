@@ -5,6 +5,7 @@ through the edit buffer (so everything is undoable and non-destructive
 until the user saves).
 """
 
+import contextlib
 from datetime import datetime
 from typing import Dict, Hashable, Iterable, List, Optional
 
@@ -250,10 +251,8 @@ def ensure_full_name_mapping(layer: QgsVectorLayer, acc: FieldAccessor) -> Field
             layer.endEditCommand()
         except Exception:  # noqa: BLE001 - addressing still proceeds without the column
             if started:
-                try:
+                with contextlib.suppress(Exception):
                     layer.destroyEditCommand()
-                except Exception:  # noqa: BLE001
-                    pass
             return acc
         layer.updateFields()
         idx = layer.fields().lookupField("FullName")

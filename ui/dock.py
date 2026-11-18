@@ -4,6 +4,7 @@ Main dock panel. Owns the current layer + configuration and wires the tabs
 to the core engines.
 """
 
+import contextlib
 import os
 
 from qgis.core import QgsCoordinateReferenceSystem, QgsProject, QgsRectangle, QgsVectorLayer
@@ -606,10 +607,8 @@ class NenaDock(QDockWidget):
         if made_archive:
             pcfg.archive.enabled = bool(watch)
         save_project_config(pcfg)
-        try:
+        with contextlib.suppress(Exception):  # the tables exist even if a drop-down cannot be wired yet
             apply_value_relations(pcfg)
-        except Exception:  # noqa: BLE001 - the tables exist even if a drop-down cannot be wired yet
-            pass
 
         label = os.path.splitext(os.path.basename(target.path))[0] if target.path else (
             target.schema or target.connection or "schema")
@@ -860,13 +859,11 @@ class NenaDock(QDockWidget):
                       "Styles.") != QMessageBox.StandardButton.Yes:
                 return
             done = S.apply_styles(pcfg, self.layer, layers)
-            try:
+            with contextlib.suppress(Exception):  # the legend refreshes on its own later
                 view = self.iface.layerTreeView()
                 for lyr in layers.values():
                     if lyr is not None:
                         view.refreshLayerSymbology(lyr.id())
-            except Exception:  # noqa: BLE001 - the legend refreshes on its own later
-                pass
             if ask:
                 self._msg(f"Styled {len(done)} layer(s): " + ", ".join(done) + ".", "Success")
         self._guard(do)

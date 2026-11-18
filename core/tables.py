@@ -1,12 +1,14 @@
 # -*- coding: utf-8 -*-
 """Create a table in a GeoPackage, a File Geodatabase, or any QGIS database connection."""
 
+import contextlib
 import os
 
 from qgis.core import (Qgis, QgsCoordinateReferenceSystem, QgsFields, QgsProject, QgsProviderRegistry,
                        QgsVectorFileWriter, QgsVectorLayer, QgsWkbTypes)
 
 from .layer_access import ConfigError
+from .safe_call import attempt
 
 DB_PROVIDERS = ("postgres", "mssql", "oracle", "hana", "spatialite", "ogr")
 
@@ -19,9 +21,8 @@ def db_connections():
         md = reg.providerMetadata(key)
         if md is None:
             continue
-        try:
-            conns = md.connections()
-        except Exception:  # noqa: BLE001 - provider without connection API
+        conns = attempt(md.connections)          # None: provider without a connection API
+        if conns is None:
             continue
         for name in sorted(conns):
             out.append((f"{name}  [{key}]", key, name))
@@ -169,11 +170,9 @@ def _match_table_name(conn, schema: str, table: str) -> str:
 
 
 def connection_has_table(conn, schema: str, table: str) -> bool:
-    try:
+    with contextlib.suppress(Exception):
         if conn.tableExists(schema, table):
             return True
-    except Exception:  # noqa: BLE001
-        pass
     return bool(_match_table_name(conn, schema, table))
 
 

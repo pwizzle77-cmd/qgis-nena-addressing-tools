@@ -592,7 +592,7 @@ class LookupPage(QWidget):
             self.dock._msg("Select a value first.", "Info")
             return
         if QMessageBox.question(self, "Delete value",
-                                f"Delete {item.text(0)} from this list?\n\nFeatures that already use it keep "
+                                f"Remove {item.text(0)} from this list?\n\nFeatures that already use it keep "
                                 "the value. To only stop offering it, untick In list instead."
                                 ) != QMessageBox.StandardButton.Yes:
             return

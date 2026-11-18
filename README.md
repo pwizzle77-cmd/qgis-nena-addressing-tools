@@ -14,7 +14,7 @@ It follows the NENA NG9-1-1 layout for road centerlines and site/structure addre
 |---|---|
 | **Works with** | QGIS 3.34 or newer, including QGIS 4 |
 | **Extra software** | None |
-| **Version** | 3.6.4 |
+| **Version** | 3.6.5 |
 | **License** | [GPL-2.0-or-later](LICENSE) |
 | **Source** | https://github.com/pwizzle77-cmd/qgis-nena-addressing-tools |
 
@@ -646,6 +646,7 @@ To see one feature's history, filter the history table by its ID and sort by ver
 
 ## What's new
 
+- **3.6.5** — Code clean-up for the QGIS plugin repository's security and quality scan. Nothing changes in how the plugin works.
 - **3.6.4** — First release on the QGIS plugin repository (marked experimental). The plugin is now called **NENA Addressing and RCL Tools**. The plugin's folder (its ID in QGIS) is now `nena_addressing_and_rcl_tools`; remove an older `nena_rcl_tools` copy when you install this one. New **Draw road** button in the Streets window: pick a street, draw the line, and the new road is named and ranged by distance (the same spacing as your house numbers). After **Add…**, the plugin offers to draw the new street right away. Drop-down lists are real drop-downs again; they had turned into text boxes with suggestions, which made fields such as St_PosTyp look like they had no list. Fixed: creating a new schema in a GeoPackage stopped with a `createFeature` error on QGIS 4. Fixed: saving new access points showed a false "Cannot delete these access points" warning. Fixed: repeated "wrapped C/C++ object has been deleted" warnings after a layer was removed or the project reloaded.
 
 - **3.6.3** — Place address saves an access point 10 feet straight off the road click, on the building's side, linked to the address and the centerline. Draw driveway is the tool for the path.

@@ -6,6 +6,8 @@ Creates the toolbar, menu entries, dock panel, the Split & Re-range map tool
 and the edit watchers that re-range centerlines after split / merge.
 """
 
+import contextlib
+
 from qgis.PyQt.QtCore import QSize, Qt, QTimer
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import QMenu, QSizePolicy, QToolButton, QWidget
@@ -160,7 +162,7 @@ class NenaRclPlugin:
         self.split_tool = SplitRerangeTool(self.iface.mapCanvas(), self._split_target, self._notify)
         self.split_tool.setAction(self.act_split_tool)
         canvas = self.iface.mapCanvas()
-        refresh = lambda ids: self.overlay and self.overlay.refresh()
+        refresh = self._refresh_overlay
         self.address_tool = AddressTool(canvas, self._address_context, self._notify, on_created=refresh)
         self.address_tool.setAction(self.act_address)
         self.driveway_tool = DrawDrivewayTool(canvas, self._address_context, self._notify, on_created=refresh)
@@ -335,6 +337,10 @@ class NenaRclPlugin:
         self._dock()
         if self.windows is not None:
             self.windows.set_docked(checked)
+
+    def _refresh_overlay(self, *_ids):
+        if self.overlay:
+            self.overlay.refresh()
 
     def _build_menu(self):
         menu = QMenu(MENU, self.iface.mainWindow())
@@ -574,12 +580,10 @@ class NenaRclPlugin:
             self.access_guard.refresh()
         if self.overlay is not None:
             self.overlay.refresh()
-        try:
+        with contextlib.suppress(Exception):  # relations are a convenience, not the save
             from .core.lookups import apply_value_relations
             from .core.project_config import load_project_config
             apply_value_relations(load_project_config(), self.dock.layer if self.dock is not None else None)
-        except Exception:  # noqa: BLE001 - relations are a convenience, not the save
-            pass
 
     def _project_loaded(self, *args):
         if self.overlay is not None:
@@ -593,13 +597,11 @@ class NenaRclPlugin:
         QTimer.singleShot(0, self._apply_dropdowns)
 
     def _apply_dropdowns(self):
-        try:
+        with contextlib.suppress(Exception):  # a drop-down is a convenience, not a reason to fail loading
             from .core.lookups import apply_dropdowns
             from .core.project_config import load_project_config
             centerline = self.dock.layer if self.dock is not None else None
             apply_dropdowns(load_project_config(), centerline)
-        except Exception:  # noqa: BLE001 - a drop-down is a convenience, not a reason to fail loading
-            pass
 
     # -- auto re-range toggle ----------------------------------------------
     def toggle_auto(self, checked):

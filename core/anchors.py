@@ -17,6 +17,7 @@ from qgis.core import (QgsCoordinateTransform, QgsFeatureRequest, QgsGeometry, Q
 
 from . import geometry_utils as gu
 from .config import PluginConfig
+from .safe_call import succeeds
 
 Anchors = Dict[str, List[Tuple[float, int]]]
 
@@ -101,9 +102,7 @@ def point_anchors(line_layer: QgsVectorLayer, cfg: PluginConfig,
             if st and st != street_key:
                 continue
         pg = QgsGeometry(pf.geometry())
-        try:
-            pg.transform(to_lines)
-        except Exception:  # noqa: BLE001
+        if not succeeds(pg.transform, to_lines):
             continue
         pt = QgsPointXY(pg.centroid().asPoint() if pg.isMultipart() else pg.asPoint())
         best = None

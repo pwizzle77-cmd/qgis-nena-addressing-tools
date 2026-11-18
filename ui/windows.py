@@ -8,6 +8,8 @@ side panel instead (beside the catalog). Both hosts get the normal window look,
 so neither turns black under a QGIS theme or ArcSkin.
 """
 
+import contextlib
+
 from qgis.PyQt.QtCore import QByteArray, QObject, QSize, Qt, pyqtSignal
 from qgis.PyQt.QtWidgets import QDockWidget, QVBoxLayout
 
@@ -78,10 +80,8 @@ class ToolWindow(Surface):
         return f"{SETTINGS_ROOT}/{self.objectName()}/geometry"
 
     def save_geometry(self):
-        try:
+        with contextlib.suppress(Exception):  # a missing setting just means the default size next time
             _settings().setValue(self._key(), self.saveGeometry())
-        except Exception:  # noqa: BLE001 - a missing setting just means the default size next time
-            pass
 
     def _restore_geometry(self):
         if self._restored:
@@ -210,10 +210,8 @@ class WindowHost(QObject):
         for name in self.windows:
             self._host(name).hide()
         self.docked = docked
-        try:
+        with contextlib.suppress(Exception):
             _settings().setValue(DOCKED_KEY, docked)
-        except Exception:  # noqa: BLE001
-            pass
         for name in self.windows:
             self._place(name)
         for name in visible:

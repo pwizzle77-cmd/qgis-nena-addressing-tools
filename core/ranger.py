@@ -23,6 +23,7 @@ from .config import (PluginConfig, RangingSettings, M_HUNDRED, M_INTERVAL, M_PRO
 from .anchors import point_anchors, point_layer_ready
 from .layer_access import (ConfigError, FieldAccessor, apply_changes, read_segments, side_values)
 from .schema import RANGE_FIELDS
+from .safe_call import succeeds
 from .split_ops import rerange_pieces
 from .topology import (SegmentInfo, assign_nodes, build_chains, ordered_path, touching_components)
 
@@ -104,9 +105,7 @@ def collect_point_observations(line_layer: QgsVectorLayer, segs: Dict[Hashable, 
         if num is None or num <= 0 or not pf.hasGeometry():
             continue
         pg = pf.geometry()
-        try:
-            pg.transform(xform)
-        except Exception:  # noqa: BLE001 - transform failure: skip the point
+        if not succeeds(pg.transform, xform):   # transform failure: skip the point
             continue
         pt = pg.centroid().asPoint() if pg.isMultipart() else pg.asPoint()
         pt = QgsPointXY(pt)
@@ -289,12 +288,12 @@ class RangeEngine:
                 per_side[side] = res
             out = []
             for i, s in enumerate(chain):
-                l, r = per_side["L"][i], per_side["R"][i]
-                if l is None and r is None:
+                left, right = per_side["L"][i], per_side["R"][i]
+                if left is None and right is None:
                     out.append(None)
                     continue
-                out.append({"L": l if l is not None else _existing_or_zero(s, "L"),
-                            "R": r if r is not None else _existing_or_zero(s, "R")})
+                out.append({"L": left if left is not None else _existing_or_zero(s, "L"),
+                            "R": right if right is not None else _existing_or_zero(s, "R")})
             return out
 
         if rs.method == M_HUNDRED:

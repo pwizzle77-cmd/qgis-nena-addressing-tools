@@ -44,7 +44,7 @@ def build_sql(master: Tuple[str, str, str, List[str]], linked: Sequence[Tuple[st
                    "DEFERRABLE INITIALLY DEFERRED;")
         pairs = [(lp, mp) for lp, mp in zip(parts, mparts) if lp and mp]
         sets = ", ".join(f"{_q(lp)} = NEW.{_q(mp)}" for lp, mp in pairs)
-        cascade_updates.append(f"  UPDATE {tab} SET {sets} WHERE {_q(sid_col)} = NEW.{_q(mid)};")
+        cascade_updates.append(f"  UPDATE {tab} SET {sets} WHERE {_q(sid_col)} = NEW.{_q(mid)};")  # nosec B608 - identifiers quoted by _q
         fn = _q(f"{prefix}_{t}_copy_street")
         selects = ", ".join(_q(mp) for _lp, mp in pairs)
         intos = ", ".join(f"NEW.{_q(lp)}" for lp, _mp in pairs)
@@ -52,7 +52,7 @@ def build_sql(master: Tuple[str, str, str, List[str]], linked: Sequence[Tuple[st
             f"CREATE OR REPLACE FUNCTION {fn}() RETURNS trigger LANGUAGE plpgsql AS $$",
             "BEGIN",
             f"  IF NEW.{_q(sid_col)} IS NOT NULL THEN",
-            f"    SELECT {selects} INTO {intos} FROM {mtab} WHERE {_q(mid)} = NEW.{_q(sid_col)};",
+            f"    SELECT {selects} INTO {intos} FROM {mtab} WHERE {_q(mid)} = NEW.{_q(sid_col)};",  # nosec B608
             "  END IF;",
             "  RETURN NEW;",
             "END $$;",

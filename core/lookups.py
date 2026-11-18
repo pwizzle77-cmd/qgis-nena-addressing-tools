@@ -21,24 +21,25 @@ tables window) seeds the defaults. Features store the code; the form shows the
 label.
 """
 
+import contextlib
 import os
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
-from .schema import OPTIONAL as O, T_INT as I, T_STRING as S, FieldDef, auto_map, normalize_name
+from .schema import OPTIONAL as OPT, T_INT as INT, T_STRING as S, FieldDef, auto_map, normalize_name
 from .streets.street_types import OFFICIAL_TYPES, TYPE_ABBREVIATIONS
 
 LOOKUP_FIELDS = [
-    FieldDef("Code", O, S, 100, "Value stored on the feature"),
-    FieldDef("Label", O, S, 100, "Name shown in the drop-down"),
-    FieldDef("SortOrder", O, I, 0, "Order in the drop-down"),
-    FieldDef("Active", O, S, 1, "Y while the value can be chosen, N when it is retired"),
-    FieldDef("Notes", O, S, 254, "Notes"),
+    FieldDef("Code", OPT, S, 100, "Value stored on the feature"),
+    FieldDef("Label", OPT, S, 100, "Name shown in the drop-down"),
+    FieldDef("SortOrder", OPT, INT, 0, "Order in the drop-down"),
+    FieldDef("Active", OPT, S, 1, "Y while the value can be chosen, N when it is retired"),
+    FieldDef("Notes", OPT, S, 254, "Notes"),
 ]
 
 DOMAIN_EXTRA_FIELDS = [
-    FieldDef("Domain", O, S, 32, "Which list this value belongs to (County, PostCode, ESN …)"),
-    FieldDef("Parent", O, S, 100, "Code in the parent list (the ZIP code of a postal community)"),
+    FieldDef("Domain", OPT, S, 32, "Which list this value belongs to (County, PostCode, ESN …)"),
+    FieldDef("Parent", OPT, S, 100, "Code in the parent list (the ZIP code of a postal community)"),
 ]
 
 DOMAINS_KEY = "domains"
@@ -571,12 +572,10 @@ def read_rows(layer, domain: str = "") -> List[dict]:
             if name not in names:
                 continue
             value = feature[name]
-            try:
+            with contextlib.suppress(Exception):
                 from ..compat import is_null
                 if is_null(value):
                     value = None
-            except Exception:  # noqa: BLE001
-                pass
             row[name] = "" if value is None else value
         row["_fid"] = feature.id()
         rows.append(row)
@@ -844,12 +843,10 @@ def collect_domain_values(pcfg, centerline=None) -> Dict[str, List[Tuple[str, st
 
 
 def _text(value) -> str:
-    try:
+    with contextlib.suppress(Exception):
         from ..compat import is_null
         if is_null(value):
             return ""
-    except Exception:  # noqa: BLE001
-        pass
     if value is None:
         return ""
     if isinstance(value, float) and value.is_integer():

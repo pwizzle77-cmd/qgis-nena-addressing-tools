@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 """Copy features from an existing layer into a schema layer."""
 
+import contextlib
+
 from qgis.core import (Qgis, QgsCoordinateTransform, QgsFeature, QgsFeatureRequest, QgsFeatureSink,
                        QgsGeometry, QgsProject, QgsVectorDataProvider, QgsWkbTypes)
 
@@ -90,7 +92,7 @@ def _kind_of(field) -> str:
         return "string"
     if "int" in name or name in ("long", "short", "integer64", "smallint", "bigint"):
         return "int"
-    try:
+    with contextlib.suppress(Exception):
         from qgis.PyQt.QtCore import QMetaType
         kind = field.type()
         ints = {QMetaType.Type.Int, QMetaType.Type.Long, QMetaType.Type.LongLong,
@@ -103,8 +105,6 @@ def _kind_of(field) -> str:
             return "double"
         if kind in dates:
             return "datetime"
-    except Exception:  # noqa: BLE001
-        pass
     return "string"
 
 
@@ -130,10 +130,8 @@ def _plain(value):
                 return to_s("yyyy-MM-dd HH:mm:ss")
     to_date = getattr(value, "toPyDate", None)
     if callable(to_date):
-        try:
+        with contextlib.suppress(Exception):
             return to_date()
-        except Exception:  # noqa: BLE001
-            pass
     return value
 
 
@@ -290,10 +288,8 @@ def import_layer(source, dest, field_map, selected_only: bool = False, progress=
         tick()
     flush()
     dest.updateExtents()
-    try:
+    with contextlib.suppress(Exception):  # the features are already stored
         dest.reload()
-    except Exception:  # noqa: BLE001 - the features are already stored
-        pass
     dest.triggerRepaint()
     if progress:
         progress(100)

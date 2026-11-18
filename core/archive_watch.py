@@ -10,6 +10,7 @@ so the live save is already stored and the file lock from that commit has
 been released. A failed version write does not roll back the live save.
 """
 
+import contextlib
 import os
 from datetime import datetime
 
@@ -25,6 +26,7 @@ from .editor_user import connection_login
 from .project_config import layer_for, load_project_config
 from .schema_pack import ARCHIVE_COLUMNS, convert_value
 from .qt_safety import disconnect_all, safe_disconnect
+from .safe_call import attempt
 
 _KEY_FIELDS = {
     "centerline": ("RCL_NGUID",),
@@ -189,9 +191,8 @@ def capture_edits(layer) -> tuple:
         before = _values(feat)
         after = dict(before)
         for idx, val in _mapping(changed_attr.get(fid)).items():
-            try:
-                name = fields.field(int(idx)).name()
-            except Exception:  # noqa: BLE001
+            name = attempt(lambda i=idx: fields.field(int(i)).name())
+            if name is None:
                 continue
             if name.lower() in _SKIP_FIELDS:
                 continue
@@ -385,10 +386,8 @@ def write_rows(version_layer, item: dict) -> int:
             flush()
     flush()
     version_layer.updateExtents()
-    try:
+    with contextlib.suppress(Exception):  # the rows are already stored
         version_layer.reload()
-    except Exception:  # noqa: BLE001 - the rows are already stored
-        pass
     version_layer.triggerRepaint()
     return written
 

@@ -17,6 +17,7 @@ The layer's previous style stays under its own name, so you can switch back
 from the Layers panel (right-click → Styles).
 """
 
+import contextlib
 import base64
 from typing import Dict, List, Optional
 
@@ -204,14 +205,12 @@ def _enable_when(symbol_layer, expression: str) -> None:
 
 def _use_nena_style(layer):
     """Switch the layer to a style named NENA, keeping the previous one under its own name."""
-    try:
+    with contextlib.suppress(Exception):  # styling still works without the style manager
         manager = layer.styleManager()
         if manager.currentStyle() != NENA_STYLE:
             if NENA_STYLE not in manager.styles():
                 manager.addStyleFromLayer(NENA_STYLE)
             manager.setCurrentStyle(NENA_STYLE)
-    except Exception:  # noqa: BLE001 - styling still works without the style manager
-        pass
 
 
 def _finish(layer, renderer, rules):
@@ -249,11 +248,9 @@ def style_centerline(layer, fields: Dict[str, str]) -> None:
             "name": "filled_arrowhead", "color": ONE_WAY, "outline_color": "255,255,255",
             "outline_width": "0.3", "size": "3.4", "angle": "0"}, interval=22)
         _enable_when(travel, one_way[0])
-        try:
+        with contextlib.suppress(Exception):  # arrows still show, pointing along the line
             from qgis.core import QgsProperty
             travel.subSymbol().setDataDefinedAngle(QgsProperty.fromExpression(one_way[1]))
-        except Exception:  # noqa: BLE001 - arrows still show, pointing along the line
-            pass
         symbol.appendSymbolLayer(travel)
     symbol.appendSymbolLayer(_marker_line("firstvertex", {
         "name": "circle", "color": START, "outline_color": "255,255,255", "outline_width": "0.4", "size": "2.8"}))
@@ -276,13 +273,11 @@ def style_address(layer, fields: Dict[str, str]) -> None:
     _use_nena_style(layer)
     symbol = QgsMarkerSymbol.createSimple({"name": "circle", "color": ADDRESS, "outline_color": "255,255,255",
                                            "outline_width": "0.4", "size": "2.6"})
-    try:
+    with contextlib.suppress(Exception):  # the orange dot stays
         encoded = base64.b64encode(_HOUSE_SVG.encode("utf-8")).decode("ascii")
         house = QgsSvgMarkerSymbolLayer.create({"name": "base64:" + encoded, "size": "4.2", "size_unit": "MM"})
         if house is not None:
             symbol.changeSymbolLayer(0, house)
-    except Exception:  # noqa: BLE001 - the orange dot stays
-        pass
     rules = []
     text = address_label_expression(fields)
     if text:

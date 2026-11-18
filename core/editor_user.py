@@ -11,6 +11,8 @@ value already stored, including one copied onto a split piece, is kept.
 The columns are found by name. They do not have to be in the field mapping.
 """
 
+import contextlib
+import functools
 import re
 
 from qgis.core import QgsFeatureRequest, QgsProject, QgsVectorLayer
@@ -21,6 +23,7 @@ from .config import load_from_layer
 from .project_config import layer_for, load_project_config
 from .schema import LAST_UPDATED_BY, WHO_ENTERED, normalize_name
 from .qt_safety import disconnect_all, safe_disconnect
+from .safe_call import attempt
 
 # Provider keys that store a login on the QGIS connection. SpatiaLite and
 # OGR files do not.
@@ -54,13 +57,11 @@ def uri_username(text: str) -> str:
 
 def _uri_authcfg(text: str) -> str:
     text = text or ""
-    try:
+    with contextlib.suppress(Exception):
         from qgis.core import QgsDataSourceUri
         auth = (QgsDataSourceUri(text).authConfigId() or "").strip()
         if auth:
             return auth
-    except Exception:  # noqa: BLE001
-        pass
     match = _AUTH_RE.search(text)
     if not match:
         return ""
@@ -95,17 +96,13 @@ def _auth_username(authcfg: str) -> str:
 
 def _source_text(layer) -> str:
     chunks = []
-    try:
+    with contextlib.suppress(Exception):
         chunks.append(layer.source() or "")
-    except Exception:  # noqa: BLE001
-        pass
-    try:
+    with contextlib.suppress(Exception):
         provider = layer.dataProvider()
         uri = provider.uri() if provider is not None else None
         if uri is not None:
             chunks.append(uri.uri() if hasattr(uri, "uri") else str(uri))
-    except Exception:  # noqa: BLE001
-        pass
     return "\n".join(chunk for chunk in chunks if chunk)
 
 
@@ -129,10 +126,8 @@ def _stored_username(provider: str, source: str) -> str:
     port = str(layer_uri.port() or "")
     auth = (layer_uri.authConfigId() or "").strip()
     for conn in connections.values():
-        try:
-            text = conn.uri() if hasattr(conn, "uri") else ""
-            stored = QgsDataSourceUri(text)
-        except Exception:  # noqa: BLE001
+        stored = attempt(lambda c=conn: QgsDataSourceUri(c.uri() if hasattr(c, "uri") else ""))
+        if stored is None:
             continue
         if database and (stored.database() or "").strip().lower() != database:
             continue
@@ -212,12 +207,10 @@ def _ids(value) -> set:
 def _feature(layer, fid):
     getter = getattr(layer, "getFeature", None)
     if getter is not None:
-        try:
+        with contextlib.suppress(Exception):
             feat = getter(fid)
             if feat is not None and feat.isValid():
                 return feat
-        except Exception:  # noqa: BLE001
-            pass
     try:
         return next(layer.getFeatures(QgsFeatureRequest().setFilterFid(int(fid))), None)
     except (TypeError, ValueError, StopIteration):
@@ -336,9 +329,12 @@ class EditorUserWatcher(QObject):
             signal = getattr(layer, "beforeCommitChanges", None)
             if signal is None or not hasattr(signal, "connect"):
                 continue
-            slot = lambda *_, lid=layer_id: self._before(lid)
+            slot = functools.partial(self._before_commit, layer_id)
             signal.connect(slot)
             self._conns.append((layer, signal, slot))
+
+    def _before_commit(self, layer_id, *_args):
+        self._before(layer_id)
 
     def _before(self, layer_id):
         layer = self._layers.get(layer_id)
