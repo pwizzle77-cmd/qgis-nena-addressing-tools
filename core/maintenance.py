@@ -10,7 +10,7 @@ from .config import PluginConfig
 from .layer_access import ConfigError, FieldAccessor, apply_changes
 from .nguid import local_id, make_nguid
 from .schema_pack import centerline_defs
-from .split_ops import nguid_agency
+from .split_ops import agency_from_layers, nguid_agency
 
 
 def populate_ids(layer: QgsVectorLayer, cfg: PluginConfig, selected_only: bool,
@@ -48,15 +48,76 @@ def populate_ids(layer: QgsVectorLayer, cfg: PluginConfig, selected_only: bool,
     return n_ids, n_ag
 
 
-def _duplicate_nguids(layer: QgsVectorLayer, acc: FieldAccessor) -> Set:
-    """Ids of features whose RCL_NGUID an older feature (lower id) already has."""
+def populate_address_ids(cfg: PluginConfig, centerlines: QgsVectorLayer, selected_only: bool) -> Tuple[int, int]:
+    """
+    Site_NGUID of the address points and DW_NGUID of the driveways set in
+    the project (see populate_point_ids). The agency is the identifier in
+    the settings, else the one the existing NGUIDs use.
+    Returns (site_nguids_written, driveway_nguids_written).
+    """
+    from .addressing.engine import address_mapping
+    from .addressing.ssap import DRIVEWAY_FIELDS
+    from .project_config import layer_for, load_project_config
+    from .schema import auto_map
+    pcfg = load_project_config()
+    addr = layer_for(pcfg.streets, "address")
+    dw = layer_for(pcfg.addresses, "driveway")
+    addr_acc = dw_acc = None
+    if addr is not None:
+        acfg = PluginConfig()
+        acfg.mapping = address_mapping(addr, pcfg)
+        addr_acc = FieldAccessor(addr, acfg)
+    if dw is not None:
+        dcfg = PluginConfig()
+        dcfg.mapping = dict(auto_map([f.name() for f in dw.fields()], DRIVEWAY_FIELDS),
+                            **{k: v for k, v in pcfg.addresses.driveway_mapping.items() if v})
+        dw_acc = FieldAccessor(dw, dcfg)
+    if addr_acc is None and dw_acc is None:
+        return 0, 0
+    if (cfg.edit.agency_id or "").strip():
+        agency, fmt = cfg.edit.agency_id.strip(), cfg.edit.nguid_format
+    else:
+        rcl_acc = FieldAccessor(centerlines, cfg) if centerlines is not None else None
+        agency, fmt = agency_from_layers([(addr, addr_acc, "Site_NGUID"), (dw, dw_acc, "DW_NGUID"),
+                                          (centerlines, rcl_acc, "RCL_NGUID"),
+                                          (addr, addr_acc, "DiscrpAgID")], cfg.edit.nguid_format)
+    if not agency:
+        return 0, 0
+    # only the selected features of each layer when "selected" was asked
+    return (populate_point_ids(addr, addr_acc, "Site_NGUID", "SSAP", cfg, agency, fmt, selected_only),
+            populate_point_ids(dw, dw_acc, "DW_NGUID", "DW", cfg, agency, fmt, selected_only))
+
+
+def populate_point_ids(layer: QgsVectorLayer, acc: FieldAccessor, field: str, kind: str, cfg: PluginConfig,
+                       agency: str, fmt: str, selected_only: bool) -> int:
+    """
+    Fill empty ``field`` NGUIDs (Site_NGUID of address points, DW_NGUID of
+    driveways) of ``layer``, and replace ones an older feature already has.
+    ``kind`` is the NGUID layer code (SSAP, DW). Returns the number written.
+    """
+    if layer is None or acc is None or not acc.has(field) or not agency:
+        return 0
+    duplicates = _duplicate_nguids(layer, acc, field)
+    feats = layer.getSelectedFeatures() if selected_only else layer.getFeatures()
+    changes = {}
+    for f in feats:
+        if not acc.get(f, field) or f.id() in duplicates:
+            changes[f.id()] = {field: make_nguid(local_id(cfg.edit.nguid_local_id, f.id()), agency,
+                                                 fmt or cfg.edit.nguid_format, kind)}
+    if changes:
+        apply_changes(layer, acc, changes, f"NENA: populate {field}")
+    return len(changes)
+
+
+def _duplicate_nguids(layer: QgsVectorLayer, acc: FieldAccessor, field: str = "RCL_NGUID") -> Set:
+    """Ids of features whose ``field`` value an older feature (lower id) already has."""
     first, later = {}, set()
-    request = QgsFeatureRequest().setSubsetOfAttributes([acc.index["RCL_NGUID"]])
+    request = QgsFeatureRequest().setSubsetOfAttributes([acc.index[field]])
     flag = getattr(getattr(QgsFeatureRequest, "Flag", QgsFeatureRequest), "NoGeometry", None)
     if flag is not None and hasattr(request, "setFlags"):
         request.setFlags(flag)
     for f in layer.getFeatures(request):
-        value = acc.get(f, "RCL_NGUID")
+        value = acc.get(f, field)
         if not value:
             continue
         if value in first:

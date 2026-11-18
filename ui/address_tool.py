@@ -250,12 +250,21 @@ class AddressTool(_AccessTool):
             else:
                 self.notify("Success", f"Address {v['number']}{v['suffix']} {plan.full_name} created."
                             + self._access_note(ids))
+                self._nguid_note(ids)
                 self.ctx.addr.triggerRepaint()
                 if self.ctx.access is not None:
                     self.ctx.access.triggerRepaint()
                 if self.on_created:
                     self.on_created(ids)
         self._reset()
+
+    def _nguid_note(self, ids):
+        """Say (once per tool) why a new address point has no Site_NGUID."""
+        if ids.get("no_site_nguid") and not getattr(self, "_told_no_nguid", False):
+            self._told_no_nguid = True
+            self.notify("Warning", "The new address point has no Site_NGUID: enter your agency identifier "
+                                   "(e.g. columbiacountyfla.com) in Settings › Editing › NGUID, then "
+                                   "'Fill empty – all' there fills the ones left empty.")
 
     def _access_note(self, ids):
         if ids.get("access_created"):
@@ -649,6 +658,7 @@ class PlaceUnitsTool(_AccessTool):
             label = f"{v['building']} / {label}"
         self.panel.note_placed()
         self.notify("Success", f"Address {label} {plan.full_name} created.")
+        self._nguid_note(ids)
         self.ctx.addr.triggerRepaint()
         if self.on_created:
             self.on_created(ids)

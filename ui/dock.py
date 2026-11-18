@@ -17,8 +17,8 @@ from qgis.PyQt.QtWidgets import (QCheckBox, QDockWidget, QFileDialog, QGroupBox,
 from ..compat import line_layer_filter, msg_level
 from ..core import config as C
 from ..core.layer_access import ConfigError, add_missing_fields
-from ..core.maintenance import (create_template_layer, default_mapping_for_template, populate_ids,
-                                template_field_defs)
+from ..core.maintenance import (create_template_layer, default_mapping_for_template, populate_address_ids,
+                                populate_ids, template_field_defs)
 from ..core.ranger import RangeEngine
 from ..core import rules as V
 from ..core import template as T
@@ -924,7 +924,11 @@ class NenaDock(QDockWidget):
             layer = self._require_layer()
             self._persist()
             n_ids, n_ag = populate_ids(layer, self.cfg, selected_only)
-            self._msg(f"{n_ids} NGUID(s) and {n_ag} DiscrpAgID value(s) written.", "Success")
+            n_site, n_dw = populate_address_ids(self.cfg, layer, selected_only)
+            extra = ""
+            if n_site or n_dw:
+                extra = f" Address points: {n_site} Site_NGUID(s); driveways: {n_dw} DW_NGUID(s)."
+            self._msg(f"{n_ids} road NGUID(s) and {n_ag} DiscrpAgID value(s) written.{extra}", "Success")
         self._guard(do)
 
     # ------------------------------------------------------------------ validation

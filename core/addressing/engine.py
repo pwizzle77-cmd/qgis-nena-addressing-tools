@@ -665,10 +665,40 @@ def layer_for_rule(rule: dict):
 
 
 # ---------------------------------------------------------------------------
-def _new_nguid(ctx: AddressContext, kind: str) -> Optional[str]:
-    if not ctx.edit.agency_id:
+def nguid_agency(ctx: AddressContext, like: str = ""):
+    """
+    (agency, format) for new Site / driveway NGUIDs: the agency identifier
+    from the settings; else the one the existing address-point, driveway or
+    centerline NGUIDs use (``like``: the NGUID of the road being addressed,
+    tried before scanning the layers), else DiscrpAgID. Looked up once per
+    addressing session. (None, format) when there is nothing to take it from.
+    """
+    if ctx.edit.agency_id:
+        return ctx.edit.agency_id.strip(), ctx.edit.nguid_format
+    cached = getattr(ctx, "_nguid_agency", None)
+    if cached:
+        return cached
+    from ..nguid import agency_from
+    from ..split_ops import agency_from_layers
+    agency, fmt = agency_from_layers([(ctx.addr, ctx.addr_acc, "Site_NGUID"),
+                                      (ctx.dw, ctx.dw_acc, "DW_NGUID")], ctx.edit.nguid_format)
+    if not agency and like:
+        agency, fmt = agency_from([like])
+    if not agency:
+        agency, fmt = agency_from_layers([(ctx.rcl, ctx.rcl_acc, "RCL_NGUID"),
+                                          (ctx.addr, ctx.addr_acc, "DiscrpAgID"),
+                                          (ctx.rcl, ctx.rcl_acc, "DiscrpAgID")], ctx.edit.nguid_format)
+    if agency:
+        ctx._nguid_agency = (agency, fmt or ctx.edit.nguid_format)
+        return ctx._nguid_agency
+    return None, ctx.edit.nguid_format
+
+
+def _new_nguid(ctx: AddressContext, kind: str, like: str = "") -> Optional[str]:
+    agency, fmt = nguid_agency(ctx, like)
+    if not agency:
         return None
-    return make_nguid(local_id(ctx.edit.nguid_local_id, None), ctx.edit.agency_id, ctx.edit.nguid_format, kind)
+    return make_nguid(local_id(ctx.edit.nguid_local_id, None), agency, fmt, kind)
 
 
 def _new_access_id() -> str:
@@ -829,7 +859,7 @@ def commit_address(ctx: AddressContext, plan: AddressPlan, number: int, suffix: 
     # House number and Access_X/Y stay on the road click. The access-point
     # feature is 10 feet straight off that click, on this side of the road.
     access_addr = ctx.to_addr.transform(plan.access)
-    site_nguid = _new_nguid(ctx, "SSAP")
+    site_nguid = _new_nguid(ctx, "SSAP", plan.rcl_nguid or "")
     seat = plan.access if plan.parent_driveway else access_seat(ctx, plan)
     aid, access_fid = link_access(ctx, seat, plan.street_id, plan.rcl_nguid, plan.side,
                                   plan.parent_driveway)
@@ -839,7 +869,7 @@ def commit_address(ctx: AddressContext, plan: AddressPlan, number: int, suffix: 
                  "FullName": plan.full_name or None,
                  "RCL_NGUID": plan.rcl_nguid or None, "Access_X": access_addr.x(), "Access_Y": access_addr.y(),
                  "Addr_Side": plan.side, "Site_NGUID": site_nguid, "DateUpdate": stamp,
-                 "DiscrpAgID": ctx.edit.agency_id or None})
+                 "DiscrpAgID": nguid_agency(ctx, plan.rcl_nguid or "")[0] or None})
     if aid:
         vals["AccessPointID"] = aid
     if unit_type:
@@ -877,7 +907,8 @@ def commit_address(ctx: AddressContext, plan: AddressPlan, number: int, suffix: 
             ctx.addr.endEditCommand()
             created.append((ctx.addr.id(), feat.id()))
             address_ok = True
-            out = {"address": feat.id(), "access": aid or None, "access_created": access_fid is not None}
+            out = {"address": feat.id(), "access": aid or None, "access_created": access_fid is not None,
+                   "no_site_nguid": acc.has("Site_NGUID") and not site_nguid}
             # Place address never draws a driveway. Callers pass True only for
             # Place units, when that window's driveway box is ticked.
             want_dw = bool(create_driveway)
@@ -909,7 +940,8 @@ def _write_driveway(ctx: AddressContext, plan: AddressPlan, site_nguid, stamp, a
     if QgsWkbTypes.isMultiType(ctx.dw.wkbType()):
         geom.convertToMultiType()
     acc = ctx.dw_acc
-    vals = {"DW_NGUID": _new_nguid(ctx, "DW"), "Site_NGUID": site_nguid, "RCL_NGUID": plan.rcl_nguid or None,
+    vals = {"DW_NGUID": _new_nguid(ctx, "DW", plan.rcl_nguid or ""), "Site_NGUID": site_nguid,
+            "RCL_NGUID": plan.rcl_nguid or None,
             "StreetID": plan.street_id or None, "Parent_DW": plan.parent_driveway or None,
             "AccessPointID": access_id or None, "DateUpdate": stamp}
     attrs = {acc.index[k]: acc.coerce(k, v) for k, v in vals.items() if acc.has(k)}
@@ -961,7 +993,7 @@ def commit_driveway(ctx: AddressContext, access: QgsPointXY, vertices: Sequence[
         geom.convertToMultiType()
     acc = ctx.dw_acc
     stamp = datetime.now().replace(microsecond=0)
-    vals = {"DW_NGUID": _new_nguid(ctx, "DW"), "RCL_NGUID": rcl_nguid or None,
+    vals = {"DW_NGUID": _new_nguid(ctx, "DW", rcl_nguid or ""), "RCL_NGUID": rcl_nguid or None,
             "StreetID": sid or None, "Parent_DW": parent_driveway or None,
             "AccessPointID": aid or None, "DateUpdate": stamp}
     attrs = {acc.index[k]: acc.coerce(k, v) for k, v in vals.items() if acc.has(k)}

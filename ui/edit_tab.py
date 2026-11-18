@@ -105,8 +105,9 @@ class EditTab(QWidget):
         row.addWidget(b1)
         row.addWidget(b2)
         f.addRow(row)
-        f.addRow(hint("Fills empty RCL_NGUID values (and replaces ones that copy an older road's), and empty "
-                      "DiscrpAgID with the agency identifier. Empty agency: the one the existing NGUIDs use."))
+        f.addRow(hint("Fills empty RCL_NGUID, Site_NGUID (address points) and DW_NGUID (driveways) values, "
+                      "replaces ones that copy an older feature's, and fills empty DiscrpAgID with the agency "
+                      "identifier. Empty agency: the one the existing NGUIDs use."))
         self.nguid_group = g
 
     def load(self, cfg: C.PluginConfig):

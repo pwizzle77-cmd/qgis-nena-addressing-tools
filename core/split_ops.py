@@ -120,23 +120,41 @@ def nguid_agency(cfg: PluginConfig, layer: QgsVectorLayer = None, acc: FieldAcce
                 return found, fmt
         if acc.has("DiscrpAgID") and acc.get(like, "DiscrpAgID"):
             return str(acc.get(like, "DiscrpAgID")).strip(), cfg.edit.nguid_format
-    if layer is not None and acc is not None and acc.has("RCL_NGUID"):
-        found, fmt = agency_from(_sample_nguids(layer, acc))
+    return agency_from_layers([(layer, acc, "RCL_NGUID")], cfg.edit.nguid_format)
+
+
+def agency_from_layers(sources, default_fmt: str = "urn"):
+    """
+    (agency, format) most NGUIDs of the first source that has any use;
+    ``sources``: [(layer, accessor, NENA field name)]. A ``DiscrpAgID``
+    source gives the agency as stored, with ``default_fmt``.
+    (None, default_fmt) when none has one.
+    """
+    for layer, acc, field in sources:
+        if layer is None or acc is None or not acc.has(field):
+            continue
+        values = _sample_nguids(layer, acc, field)
+        if field == "DiscrpAgID":
+            values = [str(v).strip() for v in values if str(v).strip()]
+            if values:
+                return max(set(values), key=values.count), default_fmt
+            continue
+        found, fmt = agency_from(values)
         if found:
             return found, fmt
-    return None, cfg.edit.nguid_format
+    return None, default_fmt
 
 
-def _sample_nguids(layer: QgsVectorLayer, acc: FieldAccessor, limit: int = NGUID_SAMPLE,
-                   scan: int = 20 * NGUID_SAMPLE):
-    """Up to ``limit`` non-empty RCL_NGUIDs of the layer (reading at most ``scan`` features)."""
-    request = QgsFeatureRequest().setSubsetOfAttributes([acc.index["RCL_NGUID"]])
+def _sample_nguids(layer: QgsVectorLayer, acc: FieldAccessor, field: str = "RCL_NGUID",
+                   limit: int = NGUID_SAMPLE, scan: int = 20 * NGUID_SAMPLE):
+    """Up to ``limit`` non-empty values of ``field`` (reading at most ``scan`` features)."""
+    request = QgsFeatureRequest().setSubsetOfAttributes([acc.index[field]])
     flag = getattr(getattr(QgsFeatureRequest, "Flag", QgsFeatureRequest), "NoGeometry", None)
     if flag is not None and hasattr(request, "setFlags"):
         request.setFlags(flag)
     found = []
     for n, f in enumerate(layer.getFeatures(request)):
-        value = acc.get(f, "RCL_NGUID")
+        value = acc.get(f, field)
         if value:
             found.append(value)
         if len(found) >= limit or n >= scan:

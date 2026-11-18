@@ -144,6 +144,29 @@ def test_driveway_is_off_unless_asked_and_a_drawn_driveway_is_separate(world):
     assert [(p.x(), p.y()) for p in line] == [(40, 0), (48, 25)]
 
 
+def test_site_nguid_without_agency_uses_existing_ids(world):
+    """No agency identifier: new Site/DW NGUIDs take the agency and format the
+    existing address points use; DiscrpAgID gets that agency too."""
+    ctx, addr, dw = world["ctx"], world["addr"], world["dw"]
+    ctx.edit.agency_id = ""
+    old = addr.add_committed([None] * len(ADDR), None)
+    addr._feats[old].setAttribute(ADDR.index("Site_NGUID"), "SSAP_9@columbiacountyfla.com")
+    plan = E.plan_address(ctx, P(50, 0), P(55, 30), vertices=[P(52, 15)])
+    ids = E.commit_address(ctx, plan, plan.result.number, create_driveway=True)
+    site = str(attr(addr, ids["address"], "Site_NGUID"))
+    assert site.startswith("SSAP_") and site.endswith("@columbiacountyfla.com") and site != "SSAP_9@columbiacountyfla.com"
+    assert str(attr(dw, ids["driveway"], "DW_NGUID")).startswith("DW_")
+    assert not ids["no_site_nguid"]
+
+
+def test_site_nguid_missing_is_reported(world):
+    ctx, addr = world["ctx"], world["addr"]
+    ctx.edit.agency_id = ""
+    plan = E.plan_address(ctx, P(50, 0), P(55, 30))
+    ids = E.commit_address(ctx, plan, plan.result.number)
+    assert ids["no_site_nguid"] and not attr(addr, ids["address"], "Site_NGUID")
+
+
 def test_place_address_saves_an_access_point_ten_feet_off_the_road(world):
     """The access point sits 10 feet straight off the click, linked to the address and the road."""
     addr, rcl = world["addr"], world["rcl"]

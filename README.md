@@ -171,11 +171,13 @@ The fields that must be matched for ranging: **FromAddr_L, ToAddr_L, FromAddr_R,
 | **Agency identifier** | Your agency's domain-style ID, for example `psap.example.gov`. It goes into every new NGUID and fills empty **DiscrpAgID** values | Empty — **set this first** |
 | **NGUID format** | `urn:emergency:uid:gis:RCL:{id}:{agency}` (NENA STA-006.2) or the older `RCL_{id}@{agency}` | STA-006.2 |
 | **Unique part** | Random UUID, or the feature id | Random UUID |
-| **Fill empty – selected / all** | Gives roads without an NGUID one — and a new one to a road that has the same NGUID as an older road (a split piece that kept the original's id) — and fills empty DiscrpAgID with the agency identifier | — |
+| **Fill empty – selected / all** | Gives roads without an NGUID one — and a new one to a road that has the same NGUID as an older road (a split piece that kept the original's id) — and fills empty DiscrpAgID with the agency identifier. It does the same for the **Site_NGUID** of address points and the **DW_NGUID** of driveways | — |
 
-If the agency identifier is empty, new and split roads take the agency (and format) the existing
-NGUIDs use — the split-off piece the one of the road it came from. Only when the layer has no NGUIDs
-at all do they stay empty, and a message says to set the agency identifier.
+If the agency identifier is empty, new and split roads, address points and driveways take the agency
+(and format) the existing NGUIDs use — a split-off piece the one of the road it came from, an address
+point the one of the other address points (else the driveways, the road, the centerlines, or
+DiscrpAgID). Only when there are no NGUIDs at all do they stay empty, and a message says to set the
+agency identifier.
 
 ### 4. Default values — Settings → Defaults
 
