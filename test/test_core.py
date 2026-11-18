@@ -15,7 +15,7 @@ from nena_addressing_and_rcl_tools.core import topology as T
 from nena_addressing_and_rcl_tools.core import rules as V
 from nena_addressing_and_rcl_tools.core import schema as S
 from nena_addressing_and_rcl_tools.core.config import PluginConfig, M_INTERVAL
-from nena_addressing_and_rcl_tools.core.nguid import make_nguid
+from nena_addressing_and_rcl_tools.core.nguid import agency_from, make_nguid, parse_nguid
 
 
 # ---------------------------------------------------------------- parity
@@ -254,6 +254,14 @@ def test_config_roundtrip_and_tolerance():
                                    "defaults_seeded": True}).defaults == {"OneWay": "B"}
     odd = PluginConfig.from_dict({"ranging": {"base_address": "200", "unknown": 1, "block_size": "x"}})
     assert odd.ranging.base_address == 200 and odd.ranging.block_size == 100
+
+
+def test_nguid_parse_and_agency():
+    assert parse_nguid("urn:emergency:uid:gis:RCL:abc:psap.example.gov") == ("urn", "RCL", "abc", "psap.example.gov")
+    assert parse_nguid("RCL_12@x.gov") == ("legacy", "RCL", "12", "x.gov")
+    assert parse_nguid("") is None and parse_nguid("12345") is None
+    assert agency_from(["RCL_1@a.gov", "RCL_2@b.gov", "RCL_3@b.gov", None]) == ("b.gov", "legacy")
+    assert agency_from([None, "x"]) == (None, None)
 
 
 def test_nguid():

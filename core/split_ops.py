@@ -21,7 +21,7 @@ from .anchors import point_anchors, point_layer_ready
 from .config import M_ANCHORED, M_INTERVAL, M_POINTS, PluginConfig
 from .defaults import empty_defaults
 from .layer_access import ConfigError, FieldAccessor, ensure_editable, side_values
-from .nguid import local_id, make_nguid
+from .nguid import agency_from, local_id, make_nguid
 from .schema import RANGE_FIELDS, SIDE_FIELDS
 
 NEW_PIECE = "__new_piece__"
@@ -100,10 +100,56 @@ def piece_values(acc: FieldAccessor, cfg: PluginConfig, ranges: Dict[str, R.Side
     return vals
 
 
-def new_nguid(cfg: PluginConfig):
-    if not cfg.edit.agency_id:
+NGUID_SAMPLE = 200   # existing NGUIDs read to find the agency when none is set
+
+
+def nguid_agency(cfg: PluginConfig, layer: QgsVectorLayer = None, acc: FieldAccessor = None, like=None):
+    """
+    (agency, format) for new RCL NGUIDs: the agency identifier from the
+    settings; else the one in the NGUID (or DiscrpAgID) of ``like`` – the
+    road a piece was split from; else the one most of the layer's existing
+    NGUIDs use. (None, format) when there is no way to know it.
+    """
+    agency = (cfg.edit.agency_id or "").strip()
+    if agency:
+        return agency, cfg.edit.nguid_format
+    if acc is not None and like is not None:
+        if acc.has("RCL_NGUID"):
+            found, fmt = agency_from([acc.get(like, "RCL_NGUID")])
+            if found:
+                return found, fmt
+        if acc.has("DiscrpAgID") and acc.get(like, "DiscrpAgID"):
+            return str(acc.get(like, "DiscrpAgID")).strip(), cfg.edit.nguid_format
+    if layer is not None and acc is not None and acc.has("RCL_NGUID"):
+        found, fmt = agency_from(_sample_nguids(layer, acc))
+        if found:
+            return found, fmt
+    return None, cfg.edit.nguid_format
+
+
+def _sample_nguids(layer: QgsVectorLayer, acc: FieldAccessor, limit: int = NGUID_SAMPLE,
+                   scan: int = 20 * NGUID_SAMPLE):
+    """Up to ``limit`` non-empty RCL_NGUIDs of the layer (reading at most ``scan`` features)."""
+    request = QgsFeatureRequest().setSubsetOfAttributes([acc.index["RCL_NGUID"]])
+    flag = getattr(getattr(QgsFeatureRequest, "Flag", QgsFeatureRequest), "NoGeometry", None)
+    if flag is not None and hasattr(request, "setFlags"):
+        request.setFlags(flag)
+    found = []
+    for n, f in enumerate(layer.getFeatures(request)):
+        value = acc.get(f, "RCL_NGUID")
+        if value:
+            found.append(value)
+        if len(found) >= limit or n >= scan:
+            break
+    return found
+
+
+def new_nguid(cfg: PluginConfig, layer: QgsVectorLayer = None, acc: FieldAccessor = None, like=None):
+    """A fresh RCL NGUID, or None when the agency can't be found (see nguid_agency)."""
+    agency, fmt = nguid_agency(cfg, layer, acc, like)
+    if not agency:
         return None
-    return make_nguid(local_id(cfg.edit.nguid_local_id, None), cfg.edit.agency_id, cfg.edit.nguid_format)
+    return make_nguid(local_id(cfg.edit.nguid_local_id, None), agency, fmt or cfg.edit.nguid_format)
 
 
 def apply_piece_split(layer: QgsVectorLayer, cfg: PluginConfig, acc: FieldAccessor, feat,
@@ -141,7 +187,8 @@ def apply_piece_split(layer: QgsVectorLayer, cfg: PluginConfig, acc: FieldAccess
     for i, g in enumerate(piece_geoms[1:], start=1):
         vals = piece_values(acc, cfg, ranges[i], stamp) if ranges else {}
         if acc.has("RCL_NGUID"):
-            vals["RCL_NGUID"] = new_nguid(cfg)    # None = leave empty rather than duplicate the original id
+            # None = leave empty rather than duplicate the original id
+            vals["RCL_NGUID"] = new_nguid(cfg, layer, acc, feat)
         attrs = {k: v for k, v in enumerate(feat.attributes()) if k not in pk}
         copied = {nena: py_value(attrs[idx]) for nena, idx in acc.index.items() if idx in attrs}
         copied.update(vals)

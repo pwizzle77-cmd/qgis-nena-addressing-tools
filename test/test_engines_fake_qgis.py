@@ -113,6 +113,43 @@ def test_split_rerange_and_nguid():
     w.detach()
 
 
+def test_split_nguid_agency_from_existing_ids():
+    """No agency in the settings: the split-off piece's NGUID takes the agency
+    (and format) the original road's NGUID uses, and never copies the id."""
+    lyr, cfg = make_layer()
+    cfg.edit.agency_id = ""
+    i = FIELDS.index("RCL_NGUID")
+    for fid in lyr._feats:
+        lyr._feats[fid].setAttribute(i, f"RCL_{fid}@columbiacountyfla.com")
+    C.save_to_layer(lyr, cfg)
+    RangeEngine(lyr, cfg).run(False)
+    lyr.startEditing()
+    msgs = []
+    w = LayerWatcher(lyr, lambda lvl, t: msgs.append((lvl, t)))
+    new_id = _split(lyr, 2, 125.0)
+    nguid = str(lyr._feats[new_id].attribute(i))
+    assert nguid.startswith("RCL_") and nguid.endswith("@columbiacountyfla.com")
+    assert nguid != "RCL_2@columbiacountyfla.com"
+    assert lyr._feats[2].attribute(i) == "RCL_2@columbiacountyfla.com"
+    assert not [m for m in msgs if m[0] == "Warning"]
+    w.detach()
+
+
+def test_split_nguid_without_agency_warns():
+    lyr, cfg = make_layer()
+    cfg.edit.agency_id = ""
+    C.save_to_layer(lyr, cfg)
+    RangeEngine(lyr, cfg).run(False)
+    lyr.startEditing()
+    msgs = []
+    w = LayerWatcher(lyr, lambda lvl, t: msgs.append((lvl, t)))
+    new_id = _split(lyr, 2, 125.0)
+    value = lyr._feats[new_id].attribute(FIELDS.index("RCL_NGUID"))
+    assert "urn:" not in str(value) and "@" not in str(value)
+    assert any(lvl == "Warning" and "agency identifier" in t for lvl, t in msgs)
+    w.detach()
+
+
 def test_merge_combines():
     lyr, cfg = make_layer()
     C.save_to_layer(lyr, cfg)

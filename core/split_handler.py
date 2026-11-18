@@ -41,9 +41,9 @@ from . import ranging as R
 from .config import PluginConfig, M_POINTS, GEOM_INTERVAL, GEOM_POINTS, load_from_layer
 from .defaults import configured_defaults, fill_empty_defaults
 from .layer_access import FieldAccessor, side_values
-from .nguid import local_id, make_nguid
+
 from .schema import RANGE_FIELDS, PARITY_FIELDS, SIDE_FIELDS, STREET_NAME_FIELDS
-from .split_ops import rerange_pieces
+from .split_ops import new_nguid, rerange_pieces
 from .topology import SegmentInfo, order_pieces
 from .qt_safety import alive
 
@@ -216,7 +216,8 @@ class LayerWatcher(QObject):
                     self._handle_split(cfg, acc, groups, cache)
                 elif cfg.edit.auto_nguid_new:
                     self._assign_nguids(cfg, acc, [a for m in groups.values() for a in m[1:]],
-                                        "NENA: NGUID for new features")
+                                        "NENA: NGUID for new features",
+                                        {a: m[0] for m in groups.values() for a in m[1:]})
             if new_roads:
                 if cfg.edit.auto_nguid_new:
                     self._assign_nguids(cfg, acc, new_roads, "NENA: NGUID for new features")
@@ -360,12 +361,15 @@ class LayerWatcher(QObject):
                     vals.update(side_values(side, per_piece[i][side], has_par))
                 if cfg.ranging.stamp_date_update and acc.has("DateUpdate"):
                     vals["DateUpdate"] = stamp
-                if piece.fid != orig and cfg.edit.auto_nguid_new and acc.has("RCL_NGUID") and cfg.edit.agency_id:
+                if piece.fid != orig and cfg.edit.auto_nguid_new and acc.has("RCL_NGUID"):
                     current = acc.get(feats[piece.fid], "RCL_NGUID")
                     orig_nguid = acc.get(feats[orig], "RCL_NGUID")
                     if not current or current == orig_nguid:
-                        vals["RCL_NGUID"] = make_nguid(local_id(cfg.edit.nguid_local_id, None),
-                                                       cfg.edit.agency_id, cfg.edit.nguid_format)
+                        nguid = new_nguid(cfg, self.layer, acc, feats[orig])
+                        if nguid:
+                            vals["RCL_NGUID"] = nguid
+                        else:
+                            self._no_agency()
                 changes[piece.fid] = vals
         if changes:
             n = self._write(acc, changes, "NENA: re-range after split")
@@ -431,16 +435,42 @@ class LayerWatcher(QObject):
             self._write(acc, changes, "NENA: re-range after reshape")
 
     # -- NGUIDs for new features -----------------------------------------
-    def _assign_nguids(self, cfg, acc, fids, command):
-        if not (acc.has("RCL_NGUID") and cfg.edit.agency_id):
+    def _assign_nguids(self, cfg, acc, fids, command, originals=None):
+        """
+        Give ``fids`` a new RCL_NGUID when theirs is empty – or, for a split
+        piece (``originals``: piece -> road it came from), a copy of the
+        original road's NGUID, which must stay unique.
+        """
+        if not acc.has("RCL_NGUID"):
             return
+        originals = originals or {}
+        wanted = set(fids) | set(originals.values())
+        feats = {f.id(): f for f in self.layer.getFeatures(QgsFeatureRequest().setFilterFids(list(wanted)))}
         changes = {}
-        for f in self.layer.getFeatures(QgsFeatureRequest().setFilterFids(list(fids))):
-            if not acc.get(f, "RCL_NGUID"):
-                changes[f.id()] = {"RCL_NGUID": make_nguid(local_id(cfg.edit.nguid_local_id, None),
-                                                           cfg.edit.agency_id, cfg.edit.nguid_format)}
+        for fid in fids:
+            f = feats.get(fid)
+            if f is None:
+                continue
+            current = acc.get(f, "RCL_NGUID")
+            source = feats.get(originals.get(fid))
+            if current and not (source is not None and current == acc.get(source, "RCL_NGUID")):
+                continue
+            nguid = new_nguid(cfg, self.layer, acc, source if source is not None else f)
+            if not nguid:
+                self._no_agency()
+                return
+            changes[fid] = {"RCL_NGUID": nguid}
         if changes:
             self._write(acc, changes, command)
+
+    def _no_agency(self):
+        """Say once per session why a new road got no NGUID."""
+        if getattr(self, "_told_no_agency", False):
+            return
+        self._told_no_agency = True
+        self.notify("Warning", "New road sections got no RCL_NGUID: enter your agency identifier "
+                               "(e.g. columbiacountyfla.com) in Settings › Editing › NGUID, then "
+                               "'Fill empty – all' there fills the ones left empty.")
 
     # -- write helper ----------------------------------------------------
     def _write(self, acc, changes, command) -> int:
