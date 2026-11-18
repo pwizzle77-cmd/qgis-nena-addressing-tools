@@ -12,7 +12,7 @@ from .layer_access import ConfigError
 from .schema_pack import (CREATABLE_LAYERS, VERSION_TABLE_SUFFIX, archive_field_defs, defs_for,
                          normalize_container_path, qualified_table)
 
-LOG_TAG = "NENA Addressing Tools"
+LOG_TAG = "NENA Addressing and RCL Tools"
 
 
 class SchemaCreateError(ConfigError):

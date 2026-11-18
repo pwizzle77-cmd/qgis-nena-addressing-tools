@@ -47,7 +47,7 @@ from .validation_tab import ValidationTab
 from .lookup_window import LookupPage
 from .widgets import FittingScroll, Surface, hint, host_groups, page_into
 
-TITLE = "NENA Addressing Tools"
+TITLE = "NENA Addressing and RCL Tools"
 
 
 class NenaDock(QDockWidget):

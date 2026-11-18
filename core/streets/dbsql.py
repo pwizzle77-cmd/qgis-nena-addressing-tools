@@ -33,7 +33,7 @@ def build_sql(master: Tuple[str, str, str, List[str]], linked: Sequence[Tuple[st
     """
     ms, mt, mid, mparts = master
     mtab = _t(ms, mt)
-    sql = [f"-- NENA Addressing Tools: database integrity for {mtab}",
+    sql = [f"-- NENA Addressing and RCL Tools: database integrity for {mtab}",
            "BEGIN;",
            f"ALTER TABLE {mtab} ADD CONSTRAINT {_q(prefix + '_' + mt + '_streetid_uq')} UNIQUE ({_q(mid)});"]
     cascade_updates = []

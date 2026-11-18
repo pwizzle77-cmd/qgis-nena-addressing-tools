@@ -1,4 +1,4 @@
-# NENA Addressing Tools for QGIS
+# NENA Addressing and RCL Tools for QGIS
 
 **A QGIS plugin that handles the day-to-day work of 911 addressing.**
 
@@ -62,7 +62,7 @@ It follows the NENA NG9-1-1 layout for road centerlines and site/structure addre
 
 ## Install
 
-**From QGIS (easiest):** go to **Plugins → Manage and Install Plugins → All**, search for **NENA Addressing Tools**, and click **Install Plugin**.
+**From QGIS (easiest):** go to **Plugins → Manage and Install Plugins → All**, search for **NENA Addressing and RCL Tools**, and click **Install Plugin**.
 
 **From a zip:** download the zip from the [releases page](https://github.com/pwizzle77-cmd/qgis-nena-addressing-tools/releases), then use **Plugins → Manage and Install Plugins → Install from ZIP**. The zip has `nena_addressing_and_rcl_tools/metadata.txt` at the top.
 
@@ -77,11 +77,11 @@ It follows the NENA NG9-1-1 layout for road centerlines and site/structure addre
 | 3.34+ | `%APPDATA%\QGIS\QGIS3\profiles\default\python\plugins\nena_addressing_and_rcl_tools` | `~/Library/Application Support/QGIS/QGIS3/profiles/default/python/plugins/nena_addressing_and_rcl_tools` | `~/.local/share/QGIS/QGIS3/profiles/default/python/plugins/nena_addressing_and_rcl_tools` |
 
 3. Restart QGIS.
-4. Go to **Plugins → Manage and Install Plugins → Installed** and tick **NENA Addressing Tools**.
+4. Go to **Plugins → Manage and Install Plugins → Installed** and tick **NENA Addressing and RCL Tools**.
 
-**Had an older copy in a folder called `nena_rcl_tools`?** From 3.6.4 the plugin's folder is `nena_addressing_and_rcl_tools`. Uninstall the old copy first (**Plugins → Manage and Install Plugins → Installed → NENA Addressing Tools → Uninstall Plugin**), or delete the old `nena_rcl_tools` folder while QGIS is closed, so you don't end up with two copies. Your project settings, lookup tables, and street names are stored in your project and data, so nothing is lost.
+**Had an older copy in a folder called `nena_rcl_tools`?** From 3.6.4 the plugin's folder is `nena_addressing_and_rcl_tools`. Uninstall the old copy first (**Plugins → Manage and Install Plugins → Installed → NENA Addressing Tools (or NENA RCL Tools) → Uninstall Plugin**), or delete the old `nena_rcl_tools` folder while QGIS is closed, so you don't end up with two copies. Your project settings, lookup tables, and street names are stored in your project and data, so nothing is lost.
 
-When it's on, you'll see the **NENA Addressing Tools** toolbar and a **Vector → NENA Addressing Tools** menu.
+When it's on, you'll see the **NENA Addressing and RCL Tools** toolbar and a **Vector → NENA Addressing and RCL Tools** menu.
 
 ---
 
@@ -123,7 +123,7 @@ This is the usual order for a county that already has road centerlines.
 
 Every button has its name under the icon.
 
-![The NENA Addressing Tools toolbar](docs/images/toolbar.png)
+![The NENA Addressing and RCL Tools toolbar](docs/images/toolbar.png)
 
 | Button | What it does |
 |---|---|
@@ -646,7 +646,7 @@ To see one feature's history, filter the history table by its ID and sort by ver
 
 ## What's new
 
-- **3.6.4** — The plugin's folder (its ID in QGIS) is now `nena_addressing_and_rcl_tools`; remove an older `nena_rcl_tools` copy when you install this one. New **Draw road** button in the Streets window: pick a street, draw the line, and the new road is named and ranged by distance (the same spacing as your house numbers). After **Add…**, the plugin offers to draw the new street right away. Drop-down lists are real drop-downs again; they had turned into text boxes with suggestions, which made fields such as St_PosTyp look like they had no list. Fixed: creating a new schema in a GeoPackage stopped with a `createFeature` error on QGIS 4. Fixed: saving new access points showed a false "Cannot delete these access points" warning. Fixed: repeated "wrapped C/C++ object has been deleted" warnings after a layer was removed or the project reloaded.
+- **3.6.4** — First release on the QGIS plugin repository (marked experimental). The plugin is now called **NENA Addressing and RCL Tools**. The plugin's folder (its ID in QGIS) is now `nena_addressing_and_rcl_tools`; remove an older `nena_rcl_tools` copy when you install this one. New **Draw road** button in the Streets window: pick a street, draw the line, and the new road is named and ranged by distance (the same spacing as your house numbers). After **Add…**, the plugin offers to draw the new street right away. Drop-down lists are real drop-downs again; they had turned into text boxes with suggestions, which made fields such as St_PosTyp look like they had no list. Fixed: creating a new schema in a GeoPackage stopped with a `createFeature` error on QGIS 4. Fixed: saving new access points showed a false "Cannot delete these access points" warning. Fixed: repeated "wrapped C/C++ object has been deleted" warnings after a layer was removed or the project reloaded.
 
 - **3.6.3** — Place address saves an access point 10 feet straight off the road click, on the building's side, linked to the address and the centerline. Draw driveway is the tool for the path.
 - **3.6.2** — A new house number follows where you click, counting from the start of the line (the green dot). Coordinates stored in a SQL Server float column had been saved as whole degrees, so every existing address looked like it sat at the start of the street and the new number was pushed up to the last house.

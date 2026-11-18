@@ -16,7 +16,7 @@ from ..core.schema_writer import SchemaTarget
 from ..core.tables import db_connections
 from .widgets import NormalDialog, combo, hint, set_combo_data
 
-TITLE = "NENA Addressing Tools"
+TITLE = "NENA Addressing and RCL Tools"
 _DEFAULT_SCHEMA = {"postgres": "public", "mssql": "dbo"}
 
 

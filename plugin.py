@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-NENA Addressing Tools – QGIS plugin entry point (formerly "NENA RCL Tools").
+NENA Addressing and RCL Tools – QGIS plugin entry point (formerly "NENA RCL Tools").
 
 Creates the toolbar, menu entries, dock panel, the Split & Re-range map tool
 and the edit watchers that re-range centerlines after split / merge.
@@ -25,7 +25,7 @@ from .core.addressing import engine as AE
 from .core.layer_access import ConfigError
 from .ui.widgets import icon
 
-MENU = "&NENA Addressing Tools"
+MENU = "&NENA Addressing and RCL Tools"
 
 
 class _ToolbarSpacer(QWidget):
