@@ -35,6 +35,7 @@ from ..core.project_config import layer_for, load_project_config, remember, save
 from ..core.schema import MANDATORY
 from ..core.schema_pack import (address_defs, centerline_defs, format_import_report, unmapped_required)
 from ..core.schema_writer import SchemaCreateError, create_schema, list_existing
+from ..core.centerline_pick import excluded_layers, not_a_centerline, preferred_centerline
 from ..core.split_handler import apply_split_policies
 from ..core.validator import Validator, export_csv, issues_layer
 from .edit_tab import EditTab
@@ -164,7 +165,30 @@ class NenaDock(QDockWidget):
         self.validation.compareMsagRequested.connect(lambda *_: self.compare_msag())
 
         self.iface.currentLayerChanged.connect(self._follow_active_layer)
+        prj = QgsProject.instance()
+        prj.layersAdded.connect(self._refresh_centerline_choices)
+        prj.layersRemoved.connect(self._refresh_centerline_choices)
+        self.projectConfigSaved.connect(self._refresh_centerline_choices)
+        self._refresh_centerline_choices()
         self.set_layer(self.cb_layer.currentLayer())
+
+    def _refresh_centerline_choices(self, *_):
+        """Leave version tables and driveways out of the Centerline pickers, and
+        open on the project's centerline rather than whatever is listed first."""
+        try:
+            hidden = excluded_layers()
+        except Exception:  # noqa: BLE001 - never block the window over a picker
+            return
+        for combo in [self.cb_layer] + list(getattr(self, "_layer_mirrors", [])):
+            try:
+                combo.setExceptedLayerList(hidden)
+            except RuntimeError:
+                continue
+        current = self.cb_layer.currentLayer()
+        if current is None or not_a_centerline(current):
+            best = preferred_centerline(QgsProject.instance().mapLayers().values())
+            if best is not None and best is not current:
+                self.cb_layer.setLayer(best)
 
     def _project_page(self):
         """Schema, import, and change tracking. These are project settings, not daily tools."""
@@ -211,10 +235,16 @@ class NenaDock(QDockWidget):
             self.iface.currentLayerChanged.disconnect(self._follow_active_layer)
         except (TypeError, RuntimeError):
             pass
+        prj = QgsProject.instance()
+        for signal in (prj.layersAdded, prj.layersRemoved):
+            try:
+                signal.disconnect(self._refresh_centerline_choices)
+            except (TypeError, RuntimeError):
+                pass
 
     # ------------------------------------------------------------------ layer/config
     def _follow_active_layer(self, layer):
-        if isinstance(layer, QgsVectorLayer) and layer is not self.layer:
+        if isinstance(layer, QgsVectorLayer) and layer is not self.layer and not not_a_centerline(layer):
             from ..compat import geometry_type_line
             if layer.geometryType() == geometry_type_line():
                 self.cb_layer.setLayer(layer)
@@ -1051,6 +1081,7 @@ class NenaDock(QDockWidget):
         combo = QgsMapLayerComboBox()
         combo.setFilters(line_layer_filter())
         combo.setAllowEmptyLayer(True)
+        combo.setExceptedLayerList(list(self.cb_layer.exceptedLayerList()))
         if self.cb_layer.currentLayer() is not None:
             combo.setLayer(self.cb_layer.currentLayer())
         combo.layerChanged.connect(lambda lyr, source=combo: self._mirror_from(source, lyr))

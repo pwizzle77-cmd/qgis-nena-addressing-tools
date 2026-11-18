@@ -409,7 +409,9 @@ class LayerWatcher(QObject):
                 self._busy = False
             return
         da = gu.make_distance_area(self.layer.crs())
-        mpn = R.to_meters(cfg.ranging.interval_distance, cfg.ranging.interval_units)
+        from .split_ops import split_metres_per_number
+        mpn = split_metres_per_number(cfg) or R.to_meters(cfg.ranging.interval_distance,
+                                                          cfg.ranging.interval_units)
         if mpn <= 0:
             return
         changes = {}

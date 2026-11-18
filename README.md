@@ -14,7 +14,7 @@ It follows the NENA NG9-1-1 layout for road centerlines and site/structure addre
 |---|---|
 | **Works with** | QGIS 3.34 or newer, including QGIS 4 |
 | **Extra software** | None |
-| **Version** | 3.6.9 |
+| **Version** | 3.6.10 |
 | **License** | [GPL-2.0-or-later](LICENSE) |
 | **Source** | https://github.com/pwizzle77-cmd/qgis-nena-addressing-tools |
 
@@ -150,7 +150,7 @@ Work through this section once per county (or per project) before you start rang
 
 ### 1. Pick the centerline layer
 
-Every window has a **Centerline** picker at the top. It also follows the line layer that's active in the Layers panel. The settings below belong to that layer, so check the picker shows the right one before you change anything.
+Every window has a **Centerline** picker at the top. It opens on the project's centerline and also follows the line layer that's active in the Layers panel. Version tables and driveways are never listed. The settings below belong to that layer, so check the picker shows the right one before you change anything.
 
 ### 2. Match the fields — Settings → Fields
 
@@ -371,7 +371,7 @@ Windows remember their size and position.
 
 **Rather keep them docked?** Tick **NENA ▾ → Dock the NENA windows in the side panel**. They'll open as tabs next to the Browser/Catalog instead of as separate windows.
 
-**Choosing the centerline layer:** each window has a **Centerline** picker at the top. The windows also follow whichever line layer is active in the Layers panel.
+**Choosing the centerline layer:** each window has a **Centerline** picker at the top. It opens on the project's centerline, and it also follows the line layer that's active in the Layers panel. Version (history) tables, driveways, and the project's address, access-point, and street-name layers are left out of the picker, so you can't assign or draw streets into them by accident.
 
 ---
 
@@ -702,7 +702,7 @@ Turn these on or off under **Settings → Editing**.
 
 | You… | The plugin… |
 |---|---|
-| **Split** a road with QGIS | Divides the original range across the pieces by length. The first piece keeps **From**, the last keeps **To**. Undo once to restore the numbers, again to undo the split. If an address-point layer is set on **Ranges → Method**, houses keep their numbers on the piece they actually front |
+| **Split** a road with QGIS | Divides the original range across the pieces: where the house numbers are when you address by distance (From + distance from the start), otherwise by length. The first piece keeps **From**, the last keeps **To**. Undo once to restore the numbers, again to undo the split. Houses keep their numbers on the piece they actually front: the address points from **Ranges → Method → Address points** are used, or, when none is set there, the address-point layer from the **Addresses** window |
 | Use the **Split** tool | One click: hover to preview, click to split. Both pieces are re-ranged and the new piece gets a new ID. One undo step |
 | **Draw a new road** that ends on or crosses another road | Splits the existing road there and continues the range. Turn off "crossings" where you have overpasses |
 | Have **old roads that cross** without being split | **Split at intersections** finds and splits them, then re-ranges |
@@ -858,6 +858,7 @@ To see one feature's history, filter the history table by its ID and sort by ver
 
 ## What's new
 
+- **3.6.10** — The **Centerline** picker leaves out version (history) tables, driveways, and the address, access-point, and street-name layers, and opens on the project's centerline, so streets can't be assigned or drawn into a version table by mistake. Splitting a road (QGIS split, the Split tool, or a new road meeting it) no longer gives the pieces ranges that are a little too high: with distance addressing the split falls where the house numbers are (From + distance ÷ spacing, the same spacing as Address rules), and the address points from the Addresses window anchor the split when none are set on Ranges → Method.
 - **3.6.9** — New roads are **Active** (road status `ACT`) with road class **Local** by default. Both are on **Settings → Defaults**, fill only empty fields, and can be changed or cleared. A project set up earlier gets these two defaults once.
 - **3.6.8** — New and moved roads fill their own sides: adding a road (including **Draw road**), splitting one, or changing its shape writes its left and right ZIP, MSAG community, ESN, and other side values from the polygons under **Settings → Sides**. Before, only **Calculate sides** did this. On by default; turn it off under **Settings → Editing**.
 - **3.6.7** — New **How to configure** section in this guide: every setting for streets, sides, ranges, and addressing, with a checklist. New defaults: ranging is **by distance** (Interval, 5.28 ft per number), and new addresses use **the centerline's own Parity_L / Parity_R first** (your left/right setting is used when the road has none). Layers and projects set up earlier keep their saved choices.

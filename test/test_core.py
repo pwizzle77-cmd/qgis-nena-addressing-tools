@@ -392,3 +392,16 @@ def test_new_roads_default_to_active_and_local():
     cleared = C.PluginConfig.from_dict({"defaults": {"RoadClass": "Local"}, "defaults_seeded": True})
     assert cleared.defaults == {"RoadClass": "Local"}
     assert C.PluginConfig.from_json(cfg.to_json()).defaults == cfg.defaults
+
+
+def test_split_by_distance_keeps_houses_in_range_when_to_is_high():
+    # 1000 m road numbered one number every 2 m from 101, but its To (999) is higher than the
+    # length alone gives (599). Split at 400 m: a house at 410 m is 101 + 205 = 306.
+    prop = R.redistribute(101, 999, "O", [400.0, 600.0])
+    assert prop[1][0] > 306                                   # proportional: the house falls out
+    dist = R.redistribute(101, 999, "O", [400.0, 600.0], metres_per_number=2.0)
+    assert dist[0] == (101, 299, "O") and dist[1] == (301, 999, "O")
+    assert dist[1][0] <= 306 <= dist[1][1]
+    # decreasing ranges and anchors keep their own handling
+    assert R.redistribute(999, 101, "O", [400.0, 600.0], metres_per_number=2.0) == \
+        R.redistribute(999, 101, "O", [400.0, 600.0])

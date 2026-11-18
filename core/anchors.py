@@ -22,12 +22,33 @@ from .safe_call import succeeds
 Anchors = Dict[str, List[Tuple[float, int]]]
 
 
-def point_layer_ready(cfg: PluginConfig) -> bool:
+def point_source(cfg: PluginConfig):
+    """(point layer, house-number field, street field) used for anchors.
+
+    The layer set on Ranges, Method, Address points; when none is set there,
+    the address-point layer chosen in the Addresses window (its house-number
+    field), so a split keeps houses on the piece they front without setting
+    the same layer twice. Returns (None, "", "") when there is neither.
+    """
     rs = cfg.ranging
-    if not (rs.point_layer_id and rs.point_number_field):
-        return False
-    pl = QgsProject.instance().mapLayer(rs.point_layer_id)
-    return isinstance(pl, QgsVectorLayer) and pl.fields().lookupField(rs.point_number_field) >= 0
+    if rs.point_layer_id and rs.point_number_field:
+        pl = QgsProject.instance().mapLayer(rs.point_layer_id)
+        if isinstance(pl, QgsVectorLayer) and pl.fields().lookupField(rs.point_number_field) >= 0:
+            return pl, rs.point_number_field, rs.point_street_field
+    try:
+        from .project_config import layer_for, load_project_config
+        pcfg = load_project_config()
+        pl = layer_for(pcfg.streets, "address")
+        number = (pcfg.streets.address_mapping or {}).get("Add_Number") or "Add_Number"
+    except Exception:  # noqa: BLE001 - no project settings: no anchors
+        return None, "", ""
+    if isinstance(pl, QgsVectorLayer) and pl.fields().lookupField(number) >= 0:
+        return pl, number, ""
+    return None, "", ""
+
+
+def point_layer_ready(cfg: PluginConfig) -> bool:
+    return point_source(cfg)[0] is not None
 
 
 def point_anchors(line_layer: QgsVectorLayer, cfg: PluginConfig,
@@ -49,9 +70,9 @@ def point_anchors(line_layer: QgsVectorLayer, cfg: PluginConfig,
     if not pieces or not point_layer_ready(cfg):
         return out
     rs = cfg.ranging
-    pl = QgsProject.instance().mapLayer(rs.point_layer_id)
-    num_idx = pl.fields().lookupField(rs.point_number_field)
-    street_idx = pl.fields().lookupField(rs.point_street_field) if rs.point_street_field else -1
+    pl, number_field, street_field = point_source(cfg)
+    num_idx = pl.fields().lookupField(number_field)
+    street_idx = pl.fields().lookupField(street_field) if street_field else -1
     crs = line_layer.crs()
     radius = gu.metres_to_layer_units(rs.point_search_distance_m, crs)
     da = gu.make_distance_area(crs)

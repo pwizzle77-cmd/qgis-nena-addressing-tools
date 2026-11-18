@@ -521,3 +521,16 @@ def test_new_and_moved_roads_get_their_sides_from_the_polygons(world):
     rcl.endEditCommand()
     assert attr(rcl, 2, "MSAGComm_L") == "TOWN B"
     w.detach()
+
+
+def test_centerline_picker_leaves_out_versions_and_driveways(world):
+    from nena_addressing_and_rcl_tools.core.centerline_pick import not_a_centerline, preferred_centerline
+    rcl, dw = world["rcl"], world["dw"]
+    versions = _layer("RoadCenterline_Versions", RCL)
+    drive = _layer("Driveway", DW)
+    assert not_a_centerline(versions) and not_a_centerline(drive)
+    assert not_a_centerline(dw)                     # the configured driveway layer, whatever its name
+    assert not not_a_centerline(rcl)
+    # the remembered centerline wins; a versions table is never chosen
+    assert preferred_centerline([versions, drive, dw, rcl]) is rcl
+    assert preferred_centerline([versions, drive]) is None

@@ -178,6 +178,18 @@ def interval_boundaries(lengths_m: Sequence[float], base: int, metres_per_number
     return [base + d / metres_per_number for d in cumulative(lengths_m)]
 
 
+def distance_split_boundaries(lengths_m: Sequence[float], range_from: int, range_to: int,
+                              metres_per_number: float) -> List[float]:
+    """Split boundaries for distance addressing: each inner boundary at
+    FROM + distance from the start / metres per number (where the house
+    numbers there are), the last one at the original TO. Inner boundaries are
+    kept inside the original range."""
+    inner = interval_boundaries(lengths_m, range_from, metres_per_number)
+    end = float(range_to + 1)
+    bounds = [float(range_from)] + [min(b, end) for b in inner[1:-1]] + [end]
+    return bounds
+
+
 def proportional_boundaries(lengths_m: Sequence[float], range_from: int, range_to: int) -> List[float]:
     """Spread the inclusive range [range_from, range_to] proportionally to length."""
     cum = cumulative(lengths_m)
@@ -278,7 +290,8 @@ def anchored_boundaries(lengths_m: Sequence[float], range_from: int, range_to: i
 
 
 def redistribute(from_addr: Optional[int], to_addr: Optional[int], parity: Optional[str],
-                 lengths_m: Sequence[float], anchors: Optional[Sequence[Anchor]] = None) -> List[SideRange]:
+                 lengths_m: Sequence[float], anchors: Optional[Sequence[Anchor]] = None,
+                 metres_per_number: Optional[float] = None) -> List[SideRange]:
     """
     Split one side range across ordered pieces proportionally to length.
 
@@ -292,6 +305,13 @@ def redistribute(from_addr: Optional[int], to_addr: Optional[int], parity: Optio
     from address points on this side. When given, the split boundaries follow
     the points (piecewise-linear interpolation) so a point near the split
     keeps its number on the piece it lies along.
+
+    ``metres_per_number`` – for distance addressing (one number every so many
+    metres from the start of the road). Without anchors, the split boundaries
+    then sit where the house numbers are: FROM + distance / metres_per_number,
+    not at the share of the length. Proportional shares put the boundary too
+    high when the original TO is higher than the length alone gives, and the
+    houses near the split fell outside their piece's range.
     """
     n = len(lengths_m)
     p = normalize_parity(parity, None)
@@ -310,7 +330,12 @@ def redistribute(from_addr: Optional[int], to_addr: Optional[int], parity: Optio
         lengths = lengths[::-1]          # allocate from the low end, then mirror back
         anc = [(total - d, num) for d, num in anc]
     anc = monotone_anchors(anc, lo, hi, p)
-    bounds = anchored_boundaries(lengths, lo, hi, anc) if anc else proportional_boundaries(lengths, lo, hi)
+    if anc:
+        bounds = anchored_boundaries(lengths, lo, hi, anc)
+    elif metres_per_number and metres_per_number > 0 and not decreasing and n > 1:
+        bounds = distance_split_boundaries(lengths, lo, hi, metres_per_number)
+    else:
+        bounds = proportional_boundaries(lengths, lo, hi)
     alloc = allocate(bounds, [p] * n, clamp_max=hi)
     pieces: List[SideRange] = []
     for a in alloc:

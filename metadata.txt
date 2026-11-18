@@ -11,10 +11,11 @@ about=Day-to-day 911 addressing in QGIS, following the NENA NG9-1-1 layout for r
     - Drop-down lists for street types, communities, ZIP codes, ESNs, and other fields, so values are entered the same way every time.
     - Check for range gaps, overlaps, wrong odd/even sides, missing values, and MSAG mismatches before you submit.
     Works with GeoPackage, file geodatabase, shapefile, PostgreSQL/PostGIS, SQL Server, and other QGIS data sources. Every edit is undoable. Pure PyQGIS, no extra installs. Runs on QGIS 3.34 or newer, including QGIS 4.
-version=3.6.9
+version=3.6.10
 author=Charles
 email=pwizzle77@gmail.com
-changelog=3.6.9 - New roads are Active (road status ACT) with road class Local by default (Settings, Defaults; fill only empty fields; can be changed or cleared).
+changelog=3.6.10 - Centerline picker leaves out version tables, driveways, and the address, access-point, and street-name layers, and opens on the project's centerline. Split re-ranging no longer comes out a little too high: with distance addressing the split falls where the house numbers are, and the Addresses window's address points anchor the split when none are set on Ranges, Method.
+    3.6.9 - New roads are Active (road status ACT) with road class Local by default (Settings, Defaults; fill only empty fields; can be changed or cleared).
     3.6.8 - New and moved roads fill their own sides: adding a road (including Draw road), splitting one, or changing its shape writes its left and right ZIP, MSAG community, ESN, and other side values from the polygons under Settings, Sides. On by default (Settings, Editing).
     3.6.7 - README: new How to configure section covering every setting for streets, sides, ranges, and addressing, with a checklist. New defaults: ranging by distance (Interval, 5.28 ft per number); new addresses use the centerline's own Parity_L / Parity_R first. Layers and projects set up earlier keep their saved choices.
     3.6.6 - The toolbar is a plain QGIS toolbar again (no forced full-width row above other toolbars), so ribbon interfaces such as Workspace Ribbon show it as its own tab.

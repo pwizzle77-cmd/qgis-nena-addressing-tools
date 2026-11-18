@@ -18,7 +18,7 @@ from ..compat import py_value
 from . import geometry_utils as gu
 from . import ranging as R
 from .anchors import point_anchors, point_layer_ready
-from .config import M_ANCHORED, M_POINTS, PluginConfig
+from .config import M_ANCHORED, M_INTERVAL, M_POINTS, PluginConfig
 from .defaults import empty_defaults
 from .layer_access import ConfigError, FieldAccessor, ensure_editable, side_values
 from .nguid import local_id, make_nguid
@@ -43,10 +43,12 @@ def rerange_pieces(layer: QgsVectorLayer, cfg: PluginConfig, original: Dict[str,
     if method in (M_ANCHORED, M_POINTS) and point_layer_ready(cfg):
         anchors = point_anchors(layer, cfg, pieces, street_key, exclude_fids)
 
+    mpn = split_metres_per_number(cfg)
     per_side = {}
     for side in ("L", "R"):
         f, t, p = original[side]
-        per_side[side] = R.redistribute(f, t, p, lengths, anchors[side] if method == M_ANCHORED else None)
+        per_side[side] = R.redistribute(f, t, p, lengths, anchors[side] if method == M_ANCHORED else None,
+                                        metres_per_number=mpn if method != M_POINTS else None)
         if method == M_POINTS and anchors[side]:
             obs = _anchors_per_piece(anchors[side], lengths)
             rs = cfg.ranging
@@ -56,6 +58,26 @@ def rerange_pieces(layer: QgsVectorLayer, cfg: PluginConfig, original: Dict[str,
             per_side[side] = [r if r is not None else per_side[side][i] for i, r in enumerate(res)]
     used = len(anchors["L"]) + len(anchors["R"])
     return [{"L": per_side["L"][i], "R": per_side["R"][i]} for i in range(len(pieces))], used
+
+
+def split_metres_per_number(cfg: PluginConfig):
+    """Metres per house number when addressing is by distance, else None.
+
+    The same spacing Draw road uses: the Address rules distance when new
+    addresses are numbered by distance, otherwise the Ranges interval when
+    ranging by distance. Hundred-block and proportional ranging split
+    proportionally, as before."""
+    try:
+        from .project_config import load_project_config
+        a = load_project_config().addresses
+        if a.method == "distance" and float(a.distance_per_number or 0) > 0:
+            return R.to_meters(float(a.distance_per_number), a.distance_units)
+    except Exception:  # noqa: BLE001 - no project settings
+        pass
+    rs = cfg.ranging
+    if rs.method == M_INTERVAL and float(rs.interval_distance or 0) > 0:
+        return R.to_meters(float(rs.interval_distance), rs.interval_units)
+    return None
 
 
 def _anchors_per_piece(anchors, lengths):
