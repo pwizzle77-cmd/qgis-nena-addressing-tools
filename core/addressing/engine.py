@@ -34,6 +34,7 @@ from ..template import effective_fields
 from ..topology import SegmentInfo, assign_nodes, build_chains
 from . import numbering as NB
 from ..access_rules import nearest_access, suppressed_guard
+from ..safe_call import attempt
 from .ssap import ACCESS_FIELDS, COMMUNITY_FIELDS, DRIVEWAY_FIELDS, SSAP_FIELDS
 
 ADDRESS_COMMAND = "NENA: add address"
@@ -700,9 +701,8 @@ def _access_candidates(ctx: AddressContext, point: QgsPointXY):
         geom = feature.geometry()
         if geom is None or geom.isNull() or geom.isEmpty():
             continue
-        try:
-            located = geom.asPoint()
-        except Exception:  # noqa: BLE001 - a bad geometry is not a match
+        located = attempt(geom.asPoint)          # a bad geometry is not a match
+        if located is None:
             continue
         aid = str(acc.get(feature, "AccessPointID") or "").strip()
         if aid:
@@ -723,10 +723,7 @@ def _forget_access(layer, fid) -> None:
             else:
                 layer.destroyEditCommand()
         except Exception:  # noqa: BLE001 - the original error is the one to report
-            try:
-                layer.destroyEditCommand()
-            except Exception:  # noqa: BLE001
-                pass
+            attempt(layer.destroyEditCommand)
 
 
 def access_seat(ctx: AddressContext, plan: AddressPlan) -> QgsPointXY:
