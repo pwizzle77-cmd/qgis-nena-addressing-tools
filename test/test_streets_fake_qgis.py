@@ -12,14 +12,14 @@ if "fake_qgis" not in (getattr(qgis.core, "__file__", "") or ""):
 
 from qgis.core import QgsField, QgsProject, QgsVectorLayer  # noqa: E402
 
-from nena_rcl_tools.core import config as C  # noqa: E402
-from nena_rcl_tools.core.layer_access import ConfigError  # noqa: E402
-from nena_rcl_tools.core.project_config import (ProjectConfig, load_project_config, remember,  # noqa: E402
+from nena_addressing_and_rcl_tools.core import config as C  # noqa: E402
+from nena_addressing_and_rcl_tools.core.layer_access import ConfigError  # noqa: E402
+from nena_addressing_and_rcl_tools.core.project_config import (ProjectConfig, load_project_config, remember,  # noqa: E402
                                                 save_project_config)
-from nena_rcl_tools.core.streets import names as N  # noqa: E402
-from nena_rcl_tools.core.streets.repository import MASTER_SCHEMA  # noqa: E402
-from nena_rcl_tools.core.streets.service import NameConflictError, StreetService  # noqa: E402
-from nena_rcl_tools.core.streets.sync import StreetWatcherManager  # noqa: E402
+from nena_addressing_and_rcl_tools.core.streets import names as N  # noqa: E402
+from nena_addressing_and_rcl_tools.core.streets.repository import MASTER_SCHEMA  # noqa: E402
+from nena_addressing_and_rcl_tools.core.streets.service import NameConflictError, StreetService  # noqa: E402
+from nena_addressing_and_rcl_tools.core.streets.sync import StreetWatcherManager  # noqa: E402
 
 RCL_FIELDS = ["St_PreDir", "St_Name", "St_PosTyp", "StreetID", "DateUpdate", "MSAGComm_L"]
 ADDR_FIELDS = ["Add_Number", "St_PreDir", "St_Name", "St_PosTyp", "StreetID"]
@@ -107,7 +107,7 @@ def test_build_ignores_a_road_with_no_street_name():
 
 def test_import_skips_a_blank_street_name():
     from qgis.core import Qgis
-    from nena_rcl_tools.core.importer import import_layer
+    from nena_addressing_and_rcl_tools.core.importer import import_layer
     src = QgsVectorLayer("None", "src")
     dest = QgsVectorLayer("None", "street names")
     src._wkb = dest._wkb = Qgis.WkbType.NoGeometry

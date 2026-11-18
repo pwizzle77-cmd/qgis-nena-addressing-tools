@@ -4,8 +4,8 @@ Build the zip to upload to plugins.qgis.org.
 
     python scripts/make_zip.py
 
-Writes dist/nena_rcl_tools-<version>.zip with a single top folder,
-nena_rcl_tools/, as QGIS expects. Tests, screenshots, git files, caches
+Writes dist/nena_addressing_and_rcl_tools-<version>.zip with a single top folder,
+nena_addressing_and_rcl_tools/, as QGIS expects. Tests, screenshots, git files, caches
 and this script are left out.
 """
 
@@ -14,7 +14,7 @@ import os
 import zipfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-FOLDER = "nena_rcl_tools"
+FOLDER = "nena_addressing_and_rcl_tools"
 SKIP_DIRS = {".git", ".github", "__pycache__", ".pytest_cache", ".mypy_cache", "test", "dist", "scripts",
              "images"}
 SKIP_EXT = {".pyc", ".pyo", ".zip", ".gpkg", ".qgz", ".qgs"}

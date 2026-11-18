@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """Reversing a centerline keeps every house on its side; label expressions for the map styles."""
 
-from nena_rcl_tools.core.direction import flip_side, reversal_values
-from nena_rcl_tools.core.styles import (address_label_expression, full_name_expression, quote_field,
+from nena_addressing_and_rcl_tools.core.direction import flip_side, reversal_values
+from nena_addressing_and_rcl_tools.core.styles import (address_label_expression, full_name_expression, quote_field,
                                         range_expression)
 
 
@@ -63,8 +63,8 @@ def test_address_label_has_number_suffix_and_unit():
 
 
 def test_one_way_values_and_arrow_expressions():
-    from nena_rcl_tools.core.direction import ONE_WAY_CHOICES, normalize_one_way
-    from nena_rcl_tools.core.styles import one_way_expressions
+    from nena_addressing_and_rcl_tools.core.direction import ONE_WAY_CHOICES, normalize_one_way
+    from nena_addressing_and_rcl_tools.core.styles import one_way_expressions
     assert [c[0] for c in ONE_WAY_CHOICES] == ["B", "FT", "TF"]
     assert normalize_one_way(" ft ") == "FT" and normalize_one_way("x") is None and normalize_one_way(None) is None
     is_one_way, angle = one_way_expressions({"OneWay": "ONEWAY"})

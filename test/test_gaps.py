@@ -11,12 +11,12 @@ if "fake_qgis" not in (getattr(qgis.core, "__file__", "") or ""):
 
 from qgis.core import QgsField, QgsProject, QgsVectorLayer  # noqa: E402
 
-from nena_rcl_tools.core import config as C  # noqa: E402
-from nena_rcl_tools.core.defaults import fill_empty_defaults  # noqa: E402
-from nena_rcl_tools.core.gaps import fill_range_gaps  # noqa: E402
-from nena_rcl_tools.core.intersections import split_existing_intersections  # noqa: E402
-from nena_rcl_tools.core.msag import compare_msag  # noqa: E402
-from nena_rcl_tools.core.project_config import MsagSettings  # noqa: E402
+from nena_addressing_and_rcl_tools.core import config as C  # noqa: E402
+from nena_addressing_and_rcl_tools.core.defaults import fill_empty_defaults  # noqa: E402
+from nena_addressing_and_rcl_tools.core.gaps import fill_range_gaps  # noqa: E402
+from nena_addressing_and_rcl_tools.core.intersections import split_existing_intersections  # noqa: E402
+from nena_addressing_and_rcl_tools.core.msag import compare_msag  # noqa: E402
+from nena_addressing_and_rcl_tools.core.project_config import MsagSettings  # noqa: E402
 
 FIELDS = ["St_Name", "St_PosTyp", "FromAddr_L", "ToAddr_L", "FromAddr_R", "ToAddr_R",
           "Parity_L", "Parity_R", "State_L", "County_L"]

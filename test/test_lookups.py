@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """Lookup tables, access-point referential rules, and the extra schema layers."""
 
-from nena_rcl_tools.core.access_rules import blocked_deletes, deletion_message, nearest_access
-from nena_rcl_tools.core.lookups import (LOOKUP_SPECS, active_choices, builtin_unit_types, seeds_for)
-from nena_rcl_tools.core.project_config import ProjectConfig
-from nena_rcl_tools.core.schema_pack import CREATABLE_LAYERS, SCHEMA_LAYERS, address_defs, defs_for
-from nena_rcl_tools.core.streets.street_types import OFFICIAL_TYPES
+from nena_addressing_and_rcl_tools.core.access_rules import blocked_deletes, deletion_message, nearest_access
+from nena_addressing_and_rcl_tools.core.lookups import (LOOKUP_SPECS, active_choices, builtin_unit_types, seeds_for)
+from nena_addressing_and_rcl_tools.core.project_config import ProjectConfig
+from nena_addressing_and_rcl_tools.core.schema_pack import CREATABLE_LAYERS, SCHEMA_LAYERS, address_defs, defs_for
+from nena_addressing_and_rcl_tools.core.streets.street_types import OFFICIAL_TYPES
 
 
 def _labels(key):
@@ -97,13 +97,13 @@ def test_an_access_point_in_use_cannot_be_deleted():
 # ---------------------------------------------------------------------------
 # Drop-down coverage, domain list, and field matching
 # ---------------------------------------------------------------------------
-from nena_rcl_tools.core.lookups import (BINDINGS, DOMAIN_NAMES, DOMAIN_PARENT, DOMAINS_KEY, FIXED_LISTS,
+from nena_addressing_and_rcl_tools.core.lookups import (BINDINGS, DOMAIN_NAMES, DOMAIN_PARENT, DOMAINS_KEY, FIXED_LISTS,
                                          LOOKUP_KEYS, VALUE_MAP_NULL, bindings_for, lookup_field_defs,
                                          match_lookup_table, new_domain_rows, prefix_from_table,
                                          resolve_fields, rows_in_domain, value_map_config,
                                          value_relation_filter)
-from nena_rcl_tools.core.addressing.ssap import SSAP_FIELDS
-from nena_rcl_tools.core.schema import RCL_FIELDS
+from nena_addressing_and_rcl_tools.core.addressing.ssap import SSAP_FIELDS
+from nena_addressing_and_rcl_tools.core.schema import RCL_FIELDS
 
 
 def test_every_binding_points_at_a_real_list_and_a_real_nena_field():

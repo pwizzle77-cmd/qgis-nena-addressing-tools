@@ -17,10 +17,10 @@ if "fake_qgis" not in (getattr(qgis.core, "__file__", "") or ""):
 
 from qgis.core import QgsFeature, QgsField, QgsGeometry, QgsPointXY, QgsProject, QgsVectorLayer  # noqa: E402
 
-from nena_rcl_tools.core import config as C  # noqa: E402
-from nena_rcl_tools.core.ranger import RangeEngine  # noqa: E402
-from nena_rcl_tools.core.split_handler import LayerWatcher, apply_split_policies  # noqa: E402
-from nena_rcl_tools.core.validator import Validator  # noqa: E402
+from nena_addressing_and_rcl_tools.core import config as C  # noqa: E402
+from nena_addressing_and_rcl_tools.core.ranger import RangeEngine  # noqa: E402
+from nena_addressing_and_rcl_tools.core.split_handler import LayerWatcher, apply_split_policies  # noqa: E402
+from nena_addressing_and_rcl_tools.core.validator import Validator  # noqa: E402
 
 FIELDS = ["St_Name", "St_PosTyp", "FromAddr_L", "ToAddr_L", "FromAddr_R", "ToAddr_R",
           "Parity_L", "Parity_R", "RCL_NGUID", "DateUpdate"]
@@ -174,9 +174,9 @@ def test_address_points_method():
 
 
 # ---------------------------------------------------------------- new: anchors, split tool, template, overlaps
-from nena_rcl_tools.core.split_ops import split_and_rerange, SPLIT_COMMAND  # noqa: E402
-from nena_rcl_tools.core.layer_access import add_missing_fields  # noqa: E402
-from nena_rcl_tools.core import template as TPL  # noqa: E402
+from nena_addressing_and_rcl_tools.core.split_ops import split_and_rerange, SPLIT_COMMAND  # noqa: E402
+from nena_addressing_and_rcl_tools.core.layer_access import add_missing_fields  # noqa: E402
+from nena_addressing_and_rcl_tools.core import template as TPL  # noqa: E402
 
 
 def _point_layer(points):
@@ -237,7 +237,7 @@ def test_split_and_rerange_tool_single_undo_step():
 
 
 def test_split_tool_rejects_end_point():
-    from nena_rcl_tools.core.layer_access import ConfigError
+    from nena_addressing_and_rcl_tools.core.layer_access import ConfigError
     lyr, cfg = make_layer()
     lyr.startEditing()
     with pytest.raises(ConfigError):
@@ -296,7 +296,7 @@ def test_validator_only_overlaps():
     lyr.changeAttributeValues(3, {FIELDS.index("FromAddr_L"): 251})
     issues = Validator(lyr, cfg).run(False, only={"check_overlaps"})
     assert {i.code for i in issues} == {"OVERLAP"}
-    from nena_rcl_tools.core.rules import overlap_fids
+    from nena_addressing_and_rcl_tools.core.rules import overlap_fids
     assert overlap_fids(issues) == [2, 3]
 
 

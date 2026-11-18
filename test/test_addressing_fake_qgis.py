@@ -13,15 +13,15 @@ if "fake_qgis" not in (getattr(qgis.core, "__file__", "") or ""):
 
 from qgis.core import QgsField, QgsGeometry, QgsPointXY, QgsProject, QgsVectorLayer  # noqa: E402
 
-from nena_rcl_tools.core import config as C  # noqa: E402
-from nena_rcl_tools.core.addressing import engine as E  # noqa: E402
-from nena_rcl_tools.core.addressing.checks import address_issues, centerline_boundary_issues  # noqa: E402
-from nena_rcl_tools.core.addressing.reports import addresses_by_community_report, streets_report  # noqa: E402
-from nena_rcl_tools.core.config import PluginConfig  # noqa: E402
-from nena_rcl_tools.core.layer_access import ConfigError, FieldAccessor  # noqa: E402
-from nena_rcl_tools.core.project_config import ProjectConfig, remember, save_project_config  # noqa: E402
-from nena_rcl_tools.core.streets.repository import MASTER_SCHEMA  # noqa: E402
-from nena_rcl_tools.core.streets.service import StreetService  # noqa: E402
+from nena_addressing_and_rcl_tools.core import config as C  # noqa: E402
+from nena_addressing_and_rcl_tools.core.addressing import engine as E  # noqa: E402
+from nena_addressing_and_rcl_tools.core.addressing.checks import address_issues, centerline_boundary_issues  # noqa: E402
+from nena_addressing_and_rcl_tools.core.addressing.reports import addresses_by_community_report, streets_report  # noqa: E402
+from nena_addressing_and_rcl_tools.core.config import PluginConfig  # noqa: E402
+from nena_addressing_and_rcl_tools.core.layer_access import ConfigError, FieldAccessor  # noqa: E402
+from nena_addressing_and_rcl_tools.core.project_config import ProjectConfig, remember, save_project_config  # noqa: E402
+from nena_addressing_and_rcl_tools.core.streets.repository import MASTER_SCHEMA  # noqa: E402
+from nena_addressing_and_rcl_tools.core.streets.service import StreetService  # noqa: E402
 
 RCL = ["St_Name", "St_PosTyp", "StreetID", "RCL_NGUID", "FromAddr_L", "ToAddr_L", "FromAddr_R", "ToAddr_R",
        "Parity_L", "Parity_R", "MSAGComm_L", "MSAGComm_R"]
@@ -315,7 +315,7 @@ def test_new_address_copies_the_centerline_side(world):
 
 
 def test_split_where_the_side_changes_and_copies_addresses(world):
-    from nena_rcl_tools.core.addressing.side_split import split_where_side_changes
+    from nena_addressing_and_rcl_tools.core.addressing.side_split import split_where_side_changes
     ctx, rcl, addr = world["ctx"], world["rcl"], world["addr"]
     aid = E.commit_address(ctx, E.plan_address(ctx, P(160, 0), P(160, -30)), 260, create_driveway=False)["address"]
     assert attr(addr, aid, "MSAGComm") == "TOWN A"
@@ -369,7 +369,7 @@ def test_partial_rename_readdress(world):
     assert E.addresses_on_segments(ctx, [2]) == [a1]
     # segment R2 becomes "Elm Rd" (new street S3) starting at its own origin
     svc = StreetService(world["pcfg"], centerline_layer=rcl, centerline_cfg=world["cfg"])
-    import nena_rcl_tools.core.streets.names as N
+    import nena_addressing_and_rcl_tools.core.streets.names as N
     rec, _w = svc.add_street(N.parts_from({"St_Name": "Elm", "St_PosTyp": "Rd"}))
     svc.assign(rec.street_id, [2])
     svc.assign(rec.street_id, [a1], role="address")

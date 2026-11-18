@@ -2,7 +2,7 @@
      compilation is needed. Kept for teams that prefer compiled resources:
      pyrcc5 -o resources.py resources.qrc  (Qt5 only; Qt6 has no pyrcc). -->
 <RCC>
-  <qresource prefix="/plugins/nena_rcl_tools">
+  <qresource prefix="/plugins/nena_addressing_and_rcl_tools">
     <file>icons/icon.svg</file>
     <file>icons/range.svg</file>
     <file>icons/redistribute.svg</file>

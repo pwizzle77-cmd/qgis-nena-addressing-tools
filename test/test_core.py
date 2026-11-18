@@ -3,19 +3,19 @@
 Unit tests for the QGIS-independent core.
 
 Run from the folder that CONTAINS the plugin folder:
-    python -m pytest nena_rcl_tools/test -q
+    python -m pytest nena_addressing_and_rcl_tools/test -q
 """
 
 import math
 
 import pytest
 
-from nena_rcl_tools.core import ranging as R
-from nena_rcl_tools.core import topology as T
-from nena_rcl_tools.core import rules as V
-from nena_rcl_tools.core import schema as S
-from nena_rcl_tools.core.config import PluginConfig, M_INTERVAL
-from nena_rcl_tools.core.nguid import make_nguid
+from nena_addressing_and_rcl_tools.core import ranging as R
+from nena_addressing_and_rcl_tools.core import topology as T
+from nena_addressing_and_rcl_tools.core import rules as V
+from nena_addressing_and_rcl_tools.core import schema as S
+from nena_addressing_and_rcl_tools.core.config import PluginConfig, M_INTERVAL
+from nena_addressing_and_rcl_tools.core.nguid import make_nguid
 
 
 # ---------------------------------------------------------------- parity
@@ -294,7 +294,7 @@ def test_monotone_anchors():
 
 
 # ---------------------------------------------------------------- templates
-from nena_rcl_tools.core import template as TPL  # noqa: E402
+from nena_addressing_and_rcl_tools.core import template as TPL  # noqa: E402
 
 
 def test_template_json_and_effective_fields():
@@ -356,9 +356,9 @@ def test_interval_5_28_ft_ranges_a_2112_ft_road_100_to_500():
 
 
 def test_new_road_ranging_uses_house_number_spacing():
-    from nena_rcl_tools.core.config import RangingSettings
-    from nena_rcl_tools.core.project_config import ProjectConfig
-    from nena_rcl_tools.core.ranger import distance_overrides
+    from nena_addressing_and_rcl_tools.core.config import RangingSettings
+    from nena_addressing_and_rcl_tools.core.project_config import ProjectConfig
+    from nena_addressing_and_rcl_tools.core.ranger import distance_overrides
     pcfg = ProjectConfig()
     pcfg.addresses.method, pcfg.addresses.distance_per_number, pcfg.addresses.distance_units = "distance", 5.28, "feet"
     rs = RangingSettings()          # Ranging tab still on hundred-block

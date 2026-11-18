@@ -10,8 +10,8 @@ if "fake_qgis" not in (getattr(qgis.core, "__file__", "") or ""):
 
 from qgis.core import QgsFeature, QgsField, QgsVectorLayer  # noqa: E402
 
-from nena_rcl_tools.compat import py_value  # noqa: E402
-from nena_rcl_tools.core.editor_user import connection_login, stamp_editor_user, uri_username  # noqa: E402
+from nena_addressing_and_rcl_tools.compat import py_value  # noqa: E402
+from nena_addressing_and_rcl_tools.core.editor_user import connection_login, stamp_editor_user, uri_username  # noqa: E402
 
 
 def _val(lyr, fid, name):

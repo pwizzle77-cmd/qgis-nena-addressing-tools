@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Pure tests for address-number calculation."""
 
-from nena_rcl_tools.core.addressing import numbering as A
+from nena_addressing_and_rcl_tools.core.addressing import numbering as A
 
 FT = 0.3048
 
@@ -67,7 +67,7 @@ def test_collisions():
 
 
 def test_db_integrity_sql():
-    from nena_rcl_tools.core.streets.dbsql import build_sql
+    from nena_addressing_and_rcl_tools.core.streets.dbsql import build_sql
     parts = ["", "St_PreDir", "", "", "St_Name", "St_PosTyp", "St_PosDir", ""]
     sql = build_sql(("gis", "street_names", "StreetID", ["St_PreMod", "St_PreDir", "St_PreTyp", "St_PreSep",
                                                           "St_Name", "St_PosTyp", "St_PosDir", "St_PosMod"]),

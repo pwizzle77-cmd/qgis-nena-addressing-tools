@@ -3,7 +3,7 @@
 
 import pytest
 
-from nena_rcl_tools.core.addressing.units import next_unit, preview
+from nena_addressing_and_rcl_tools.core.addressing.units import next_unit, preview
 
 
 def test_increment_letter_and_unit_schemes():

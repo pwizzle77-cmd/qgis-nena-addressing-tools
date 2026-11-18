@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Pure tests for master street-name logic."""
 
-from nena_rcl_tools.core.streets import names as N
+from nena_addressing_and_rcl_tools.core.streets import names as N
 
 
 def P(**kw):
@@ -9,8 +9,8 @@ def P(**kw):
 
 
 def test_street_types_standardize_and_round_trip():
-    from nena_rcl_tools.core.project_config import ProjectConfig
-    from nena_rcl_tools.core.streets import street_types as ST
+    from nena_addressing_and_rcl_tools.core.project_config import ProjectConfig
+    from nena_addressing_and_rcl_tools.core.streets import street_types as ST
 
     assert ST.display_type("ST") == "Street"
     assert ST.display_type("glen") == "Glen"
