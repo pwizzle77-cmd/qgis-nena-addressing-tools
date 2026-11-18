@@ -250,7 +250,8 @@ def test_config_roundtrip_and_tolerance():
     back = PluginConfig.from_json(cfg.to_json())
     assert back.to_dict() == cfg.to_dict()
     assert back.defaults["State_L"] == "KY"
-    assert PluginConfig.from_dict({"defaults": {"OneWay": "B", "County_L": "  "}}).defaults == {"OneWay": "B"}
+    assert PluginConfig.from_dict({"defaults": {"OneWay": "B", "County_L": "  "},
+                                   "defaults_seeded": True}).defaults == {"OneWay": "B"}
     odd = PluginConfig.from_dict({"ranging": {"base_address": "200", "unknown": 1, "block_size": "x"}})
     assert odd.ranging.base_address == 200 and odd.ranging.block_size == 100
 
@@ -378,3 +379,16 @@ def test_defaults_range_by_distance_and_use_centerline_parity_first():
     assert cfg.ranging.interval_distance == 5.28 and cfg.ranging.interval_units == "feet"
     assert cfg.ranging.respect_existing_parity is True
     assert ProjectConfig().addresses.segment_parity_wins is True
+
+
+def test_new_roads_default_to_active_and_local():
+    from nena_addressing_and_rcl_tools.core import config as C
+    cfg = C.PluginConfig()
+    assert cfg.defaults == {"RoadStatus": "ACT", "RoadClass": "Local"}
+    # a configuration saved before these defaults existed gets them once ...
+    old = C.PluginConfig.from_dict({"mapping": {}, "defaults": {"State_L": "FL"}})
+    assert old.defaults == {"State_L": "FL", "RoadStatus": "ACT", "RoadClass": "Local"}
+    # ... and a default the user cleared afterwards stays cleared
+    cleared = C.PluginConfig.from_dict({"defaults": {"RoadClass": "Local"}, "defaults_seeded": True})
+    assert cleared.defaults == {"RoadClass": "Local"}
+    assert C.PluginConfig.from_json(cfg.to_json()).defaults == cfg.defaults

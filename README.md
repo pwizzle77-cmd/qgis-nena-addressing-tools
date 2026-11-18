@@ -14,7 +14,7 @@ It follows the NENA NG9-1-1 layout for road centerlines and site/structure addre
 |---|---|
 | **Works with** | QGIS 3.34 or newer, including QGIS 4 |
 | **Extra software** | None |
-| **Version** | 3.6.8 |
+| **Version** | 3.6.9 |
 | **License** | [GPL-2.0-or-later](LICENSE) |
 | **Source** | https://github.com/pwizzle77-cmd/qgis-nena-addressing-tools |
 
@@ -187,8 +187,11 @@ Values that rarely change. They are written **only into empty fields**; a value 
 | **Valid** (left/right) | `Y` |
 | **One-way** | `B` (two-way). Mark one-way roads with **One-way ▾** |
 | **Parity left / right** | **Leave blank.** Ranging writes the parity. A default here would be kept as the road's own parity (see step 9) |
-| **Road class** | Optional, for example `Local` |
+| **Road status** | `ACT` (Active) — **filled in for you**. The road-status code; see Lookup tables → Road statuses |
+| **Road class** | `Local` — **filled in for you** |
 | **Discrepancy agency** | Your agency identifier (the same as step 3) |
+
+New roads are **Active** with road class **Local** unless you change these two boxes; clear a box to stop filling that field. (Your layer needs the RoadStatus and RoadClass fields: **Settings → Fields → Add all fields**.)
 
 **Add a field** adds any other field you want filled. **Fill empty fields** writes the defaults onto the existing roads now; new roads get them as you add them.
 
@@ -855,6 +858,7 @@ To see one feature's history, filter the history table by its ID and sort by ver
 
 ## What's new
 
+- **3.6.9** — New roads are **Active** (road status `ACT`) with road class **Local** by default. Both are on **Settings → Defaults**, fill only empty fields, and can be changed or cleared. A project set up earlier gets these two defaults once.
 - **3.6.8** — New and moved roads fill their own sides: adding a road (including **Draw road**), splitting one, or changing its shape writes its left and right ZIP, MSAG community, ESN, and other side values from the polygons under **Settings → Sides**. Before, only **Calculate sides** did this. On by default; turn it off under **Settings → Editing**.
 - **3.6.7** — New **How to configure** section in this guide: every setting for streets, sides, ranges, and addressing, with a checklist. New defaults: ranging is **by distance** (Interval, 5.28 ft per number), and new addresses use **the centerline's own Parity_L / Parity_R first** (your left/right setting is used when the road has none). Layers and projects set up earlier keep their saved choices.
 - **3.6.5** — Code clean-up for the QGIS plugin repository's security and quality scan. Nothing changes in how the plugin works.

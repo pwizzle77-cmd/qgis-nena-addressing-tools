@@ -179,10 +179,18 @@ class MappingTab(QWidget):
                 ("One-way", "OneWay", ONEWAY_DOMAIN),
                 ("Parity left", "Parity_L", PARITY_DOMAIN),
                 ("Parity right", "Parity_R", PARITY_DOMAIN),
+                ("Road status", "RoadStatus", None),
                 ("Road class", "RoadClass", None),
                 ("Discrepancy agency", "DiscrpAgID", None)):
             form.addRow(label, self._one_editor(name, domain))
         dv.addLayout(form)
+        status = self._def_widgets.get("RoadStatus")
+        if status is not None:
+            status.setPlaceholderText("ACT")
+            status.setToolTip("The road-status code new roads get (ACT = Active, PROP = Proposed, "
+                              "PRIV = Private…; see Lookup tables, Road statuses)")
+        dv.addWidget(hint("New roads get road status <b>ACT</b> (Active) and road class <b>Local</b> unless you "
+                          "change them here. Clear a box to stop filling that field."))
         self.tbl_defaults = BoundedTable(0, 2, min_height=70, max_height=140)
         self.tbl_defaults.setHorizontalHeaderLabels(["Field", "Default"])
         self.tbl_defaults.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)

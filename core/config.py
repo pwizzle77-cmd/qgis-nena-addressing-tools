@@ -18,6 +18,10 @@ from dataclasses import dataclass, field, asdict, fields as dc_fields
 from typing import Dict, List, Optional
 
 CONFIG_VERSION = 1
+
+# Values new roads get when the field is empty (Settings, Defaults). RoadStatus stores
+# the road-status lookup code: ACT = Active.
+BUILTIN_DEFAULTS = {"RoadStatus": "ACT", "RoadClass": "Local"}
 CONFIG_PROPERTY = "nena_rcl/config"
 
 # --- ranging methods -------------------------------------------------------
@@ -126,7 +130,9 @@ class PluginConfig:
     # optional field template (see core/template.py): {"name": str, "source": str, "fields": [ {...}, ... ]}
     template: Dict = field(default_factory=dict)
     # NENA name -> value written only into empty fields (state, county, one-way, parity, …)
-    defaults: Dict[str, str] = field(default_factory=dict)
+    defaults: Dict[str, str] = field(default_factory=lambda: dict(BUILTIN_DEFAULTS))
+    # True once the built-in defaults were offered; after that a default the user cleared stays cleared
+    defaults_seeded: bool = True
 
     # -- (de)serialisation ------------------------------------------------
     def to_dict(self) -> dict:
@@ -152,6 +158,11 @@ class PluginConfig:
         if isinstance(raw, dict):
             cfg.defaults = {str(k): str(v).strip() for k, v in raw.items()
                             if v not in (None, "") and str(v).strip()}
+        if not data.get("defaults_seeded"):
+            # a configuration saved before the built-in defaults existed gets them once
+            for name, value in BUILTIN_DEFAULTS.items():
+                cfg.defaults.setdefault(name, value)
+        cfg.defaults_seeded = True
         return cfg
 
     @classmethod
