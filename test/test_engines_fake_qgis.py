@@ -40,6 +40,7 @@ def make_layer():
     cfg = C.PluginConfig()
     cfg.mapping = {n: n for n in FIELDS}
     cfg.street_key_fields = ["St_Name", "St_PosTyp"]
+    cfg.ranging.method = C.M_HUNDRED   # these tests were written for hundred-block numbers
     cfg.edit.agency_id = "psap.example.gov"
     cfg.edit.auto_rerange_split = True
     cfg.edit.auto_merge = True

@@ -143,7 +143,7 @@ class AddressesTab(QWidget):
         row.addWidget(QLabel("Right"))
         row.addWidget(self.cb_right)
         f.addRow("Parity", row)
-        self.chk_segpar = QCheckBox("Use a segment's own Parity_L/R instead (off: the parity above always wins)")
+        self.chk_segpar = QCheckBox("Use the centerline's own Parity_L / Parity_R first (off: the parity above always wins)")
         self.chk_order = QCheckBox("Keep numbers increasing between neighbouring addresses")
         self.cb_coll = combo([("Use the next free number", "next"), ("Add a suffix (101A)", "suffix"),
                               ("Ask each time", "ask")])

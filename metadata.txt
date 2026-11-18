@@ -11,10 +11,11 @@ about=Day-to-day 911 addressing in QGIS, following the NENA NG9-1-1 layout for r
     - Drop-down lists for street types, communities, ZIP codes, ESNs, and other fields, so values are entered the same way every time.
     - Check for range gaps, overlaps, wrong odd/even sides, missing values, and MSAG mismatches before you submit.
     Works with GeoPackage, file geodatabase, shapefile, PostgreSQL/PostGIS, SQL Server, and other QGIS data sources. Every edit is undoable. Pure PyQGIS, no extra installs. Runs on QGIS 3.34 or newer, including QGIS 4.
-version=3.6.6
+version=3.6.7
 author=Charles
 email=pwizzle77@gmail.com
-changelog=3.6.6 - The toolbar is a plain QGIS toolbar again (no forced full-width row above other toolbars), so ribbon interfaces such as Workspace Ribbon show it as its own tab.
+changelog=3.6.7 - README: new How to configure section covering every setting for streets, sides, ranges, and addressing, with a checklist. New defaults: ranging by distance (Interval, 5.28 ft per number); new addresses use the centerline's own Parity_L / Parity_R first. Layers and projects set up earlier keep their saved choices.
+    3.6.6 - The toolbar is a plain QGIS toolbar again (no forced full-width row above other toolbars), so ribbon interfaces such as Workspace Ribbon show it as its own tab.
     3.6.5 - Code clean-up for the plugin repository's security and quality scan; no change in how the plugin works.
     3.6.4 - First release on plugins.qgis.org (experimental). Renamed to NENA Addressing and RCL Tools. Plugin folder renamed to nena_addressing_and_rcl_tools (uninstall an older nena_rcl_tools copy). Draw road for a master street name: the new centerline is named and ranged by distance. Lookup drop-downs are real drop-downs (not text boxes). Fixed the QGIS 4 schema-creation error, a false access-point delete warning when saving, and repeated deleted-layer warnings.
     3.6.3 - Place address saves an access point 10 feet straight off the road click, on the building's side, linked to the address and the centerline. The driveway checkbox is removed. Draw driveway remains the tool for the path.

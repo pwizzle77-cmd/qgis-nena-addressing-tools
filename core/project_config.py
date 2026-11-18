@@ -59,7 +59,8 @@ class AddressSettings:
     left_parity: str = "O"
     right_parity: str = "E"
     use_segment_parity: bool = True           # kept so an older project still loads; no longer used
-    segment_parity_wins: bool = False         # False: left/right parity above always wins (a mismatch is reported)
+    segment_parity_wins: bool = True          # True: the centerline's own Parity_L/R (O or E) is used first;
+                                              # False: left/right parity above always wins (a mismatch is reported)
     order_check: bool = True
     collision: str = "next"                   # next | suffix | ask
     overrides: Dict[str, Dict] = field(default_factory=dict)   # community value -> {method, distance_per_number, ...}

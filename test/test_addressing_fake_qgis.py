@@ -450,6 +450,7 @@ def test_parity_matches():
 def test_an_address_on_a_separate_piece_of_the_street_does_not_push_the_number(world):
     ctx = world["ctx"]
     rcl = world["rcl"]
+    world["pcfg"].addresses.segment_parity_wins = False   # settings' parity, segment's is reported
     # Two unconnected pieces of Pine Rd, both drawn east -> west, each measuring from its own start
     rcl.add_committed(["Pine", "Rd", "", "P1", 100, 310, 101, 311, "E", "O", "TOWN A", "TOWN A"],
                       [(800, 300), (600, 300)])
@@ -482,6 +483,7 @@ def test_numbers_come_from_the_clicked_segment_not_the_rest_of_the_street(world)
 def test_segment_parity_can_win_when_asked(world):
     rcl, pcfg = world["rcl"], world["pcfg"]
     rcl.changeAttributeValues(1, {rcl.fields().lookupField("Parity_L"): "E"})
+    pcfg.addresses.segment_parity_wins = False
     plan = E.plan_address(world["ctx"], P(50, 0), P(50, 20))
     assert plan.parity == "O" and any("Parity_L says even" in m for m in plan.messages)
     pcfg.addresses.segment_parity_wins = True

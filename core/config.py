@@ -52,7 +52,7 @@ DISTANCE_UNITS = ("meters", "feet", "us_survey_feet", "kilometers", "miles")
 
 @dataclass
 class RangingSettings:
-    method: str = M_HUNDRED
+    method: str = M_INTERVAL         # by distance (interval_distance per number); hundred-block is an option
     scope: str = SCOPE_CHAIN
     left_parity: str = "O"           # default convention: odd on the left, even on the right
     right_parity: str = "E"

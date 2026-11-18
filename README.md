@@ -14,7 +14,7 @@ It follows the NENA NG9-1-1 layout for road centerlines and site/structure addre
 |---|---|
 | **Works with** | QGIS 3.34 or newer, including QGIS 4 |
 | **Extra software** | None |
-| **Version** | 3.6.5 |
+| **Version** | 3.6.7 |
 | **License** | [GPL-2.0-or-later](LICENSE) |
 | **Source** | https://github.com/pwizzle77-cmd/qgis-nena-addressing-tools |
 
@@ -25,6 +25,7 @@ It follows the NENA NG9-1-1 layout for road centerlines and site/structure addre
 - [What can it do?](#what-can-it-do)
 - [Install](#install)
 - [Get started in 10 minutes](#get-started-in-10-minutes)
+- [How to configure](#how-to-configure)
 - [The toolbar and windows](#the-toolbar-and-windows)
 - [Map styles and line direction](#map-styles-and-line-direction)
 - [Drop-down lists (lookup tables)](#drop-down-lists-lookup-tables)
@@ -87,7 +88,7 @@ When it's on, you'll see the **NENA Addressing and RCL Tools** toolbar and a **V
 
 ## Get started in 10 minutes
 
-This is the usual order for a county that already has road centerlines.
+This is the usual order for a county that already has road centerlines. For every setting, see [How to configure](#how-to-configure).
 
 1. **Add your roads to the map.**
    Each road line should point the way the house numbers go up. Roads should be split where they meet (the plugin can do this for you later).
@@ -114,6 +115,209 @@ This is the usual order for a county that already has road centerlines.
    Overlapping ranges are selected for you so you can fix them first.
 
 > 💡 **Your settings save automatically.** Your layer edits don't. Save your layers in QGIS when you want to keep the edits. Until then, everything the plugin did can be undone.
+
+---
+
+## How to configure
+
+Work through this section once per county (or per project) before you start ranging and addressing. Most "it numbered it wrong" and "nothing happened" surprises come from a step here that was skipped.
+
+**Where the settings are kept.** Settings save as you change them, but they are stored in your **QGIS project**:
+
+- Field matching, defaults, ranging, editing, and check settings are stored **on the centerline layer** in the project.
+- Street, address, lookup, side, and MSAG settings are stored **in the project** itself.
+
+**Save the project (.qgz) after configuring**, or the settings are gone next time. To reuse the centerline settings in another project, use **Settings → Fields → Export…** and **Import…**.
+
+### Configuration checklist
+
+| ✓ | Step | Where | Needed for |
+|---|---|---|---|
+| ☐ | 1. Pick the centerline layer | Picker at the top of every window | Everything |
+| ☐ | 2. Match the fields | Settings → Fields | Everything |
+| ☐ | 3. Agency ID and NGUIDs | Settings → Editing → NGUID | New roads, splits, export |
+| ☐ | 4. Default values (state, county, agency…) | Settings → Defaults | Complete attributes |
+| ☐ | 5. ZIP, MSAG community, ESN on each side | Settings → Sides | Addresses, MSAG, export |
+| ☐ | 6. Drop-down lists | NENA ▾ → Lookup tables | Consistent values |
+| ☐ | 7. Master street names | NENA ▾ → Streets, Settings → Street rules | Draw road, renames, addresses |
+| ☐ | 8. Line direction | Style NENA layers, Reverse | Correct left/right and numbers |
+| ☐ | 9. Ranging method and parity | Ranges → Method | Range, Split, Draw road |
+| ☐ | 10. What happens while you edit | Settings → Editing | Split, merge, new roads |
+| ☐ | 11. Address layers | NENA ▾ → Addresses | Place address, driveways, units |
+| ☐ | 12. House-number rules | Settings → Address rules | Place address, units |
+| ☐ | 13. Checks | NENA ▾ → Check → Checks | Validate |
+| ☐ | 14. **Save the project** | Project → Save | Keeping all of the above |
+
+### 1. Pick the centerline layer
+
+Every window has a **Centerline** picker at the top. It also follows the line layer that's active in the Layers panel. The settings below belong to that layer, so check the picker shows the right one before you change anything.
+
+### 2. Match the fields — Settings → Fields
+
+| Setting | What to do |
+|---|---|
+| **Auto-map** | Matches your columns to NENA names, including older names such as `L_F_ADD`, `R_T_ADD`, and `STREETNAME`. Then check every row. A field left unmatched is ignored by ranging and checks |
+| **Show optional fields** | Tick to see and match the optional NENA fields too |
+| **Add mandatory** / **Add all fields** | Creates the missing columns on the layer (short names, safe for shapefiles) |
+| **Street key** | Which name parts together identify one street. Pieces with the same key are numbered as one street and checked for overlaps. The default is all the name parts (pre-modifier through post-modifier) |
+| **Field template ▾** | Loads your state's column list instead of the built-in NENA list |
+
+The fields that must be matched for ranging: **FromAddr_L, ToAddr_L, FromAddr_R, ToAddr_R, Parity_L, Parity_R**, and the street-name parts. For addressing also match the left/right **ZIP (PostCode), MSAG community, and ESN** fields.
+
+### 3. Agency ID and NGUIDs — Settings → Editing → NGUID
+
+| Setting | What to enter | Default |
+|---|---|---|
+| **Agency identifier** | Your agency's domain-style ID, for example `psap.example.gov`. It goes into every new NGUID and fills empty **DiscrpAgID** values | Empty — **set this first** |
+| **NGUID format** | `urn:emergency:uid:gis:RCL:{id}:{agency}` (NENA STA-006.2) or the older `RCL_{id}@{agency}` | STA-006.2 |
+| **Unique part** | Random UUID, or the feature id | Random UUID |
+| **Fill empty – selected / all** | Gives roads without an NGUID one, and fills empty DiscrpAgID with the agency identifier | — |
+
+Without an agency identifier, new and split roads get NGUIDs without your agency in them.
+
+### 4. Default values — Settings → Defaults
+
+Values that rarely change. They are written **only into empty fields**; a value already on a road stays.
+
+| Field | Typical value |
+|---|---|
+| **Country** (left/right) | `US` |
+| **State** (left/right) | Your state, for example `FL` |
+| **County** (left/right) | Your county, for example `Columbia County` |
+| **Valid** (left/right) | `Y` |
+| **One-way** | `B` (two-way). Mark one-way roads with **One-way ▾** |
+| **Parity left / right** | **Leave blank.** Ranging writes the parity. A default here would be kept as the road's own parity (see step 9) |
+| **Road class** | Optional, for example `Local` |
+| **Discrepancy agency** | Your agency identifier (the same as step 3) |
+
+**Add a field** adds any other field you want filled. **Fill empty fields** writes the defaults onto the existing roads now; new roads get them as you add them.
+
+### 5. ZIP, MSAG community, and ESN on each side — Settings → Sides
+
+A road is often a boundary, so its left and right side can be in different ZIP codes, communities, or ESNs.
+
+1. For **ZIP code**, **MSAG community**, and **ESN**, pick the polygon layer and the field that holds the value.
+2. Optional: **Add boundary** for more polygons, such as incorporated municipality or county, and pick which centerline field each one fills.
+3. Click **Calculate sides** to write the values onto both sides of every road.
+4. Where a boundary crosses a road part-way, **Split where side changes** cuts the road there.
+
+New addresses copy the values from their side of the road, so do this before placing addresses.
+
+### 6. Drop-down lists — NENA ▾ → Lookup tables
+
+1. **Create missing tables** (lists in red are missing).
+2. **Load values from my data**, and untick typos before they're added.
+3. **Reconnect drop-downs** after you add new layers or fields.
+4. Add local values: your communities, ZIP codes, ESNs, road classes. For postal communities, set each one's **Parent** to its ZIP so the list narrows by ZIP.
+
+See [Drop-down lists](#drop-down-lists-lookup-tables) for details.
+
+### 7. Master street names — NENA ▾ → Streets and Settings → Street rules
+
+**In the Streets window:**
+
+| Setting | What to do |
+|---|---|
+| **Master street names** | Pick the table, or **Create ▾** one in your GeoPackage or database |
+| **Link field** | Usually `StreetID`. Click **Add to layers** to create it on the roads and address points |
+| **Build from roads** | Builds the list from the names already on your roads. Pick one spelling per street |
+| **StreetID drop-down** | Turns the link field into a searchable list of street names |
+
+**In Settings → Street rules:**
+
+| Setting | Choices | Default |
+|---|---|---|
+| **Scope** | County-wide, or per field value (unique within a community, city, ZIP, or ESN) | County-wide |
+| **Compare** | Full road name, or ignore street type (*Oak St* = *Oak Ave*) | Full road name |
+| **Sound-alike names** | Warn about *Smith* / *Smyth* | On |
+| **Duplicates** | Block, or warn only | Block |
+| **Street types…** | Add local types and abbreviations | Standard USPS/NENA list |
+| **Keep the old name as a retired alias** | On a rename | On |
+| **Edits typed into the master table cascade** | Update linked roads and addresses | On |
+| **Picking a StreetID copies the name parts** | Onto the road or address | On |
+| **Set DateUpdate** | On changed features | On |
+
+### 8. Line direction
+
+House numbers increase in the direction each road was drawn, and left/right is read in that direction. Click **NENA ▾ → Style NENA layers**, look at the arrows (green dot = start, red square = end), and **Reverse** any road drawn the wrong way. **Check** also lists pieces that run against their neighbours (*DIRECTION_CONFLICT*).
+
+### 9. Ranging method and parity — NENA ▾ → Ranges → Method
+
+The default is **ranging by distance** (Interval, one number every 5.28 ft ≈ 1,000 numbers per mile), the usual method for rural and county-wide distance addressing. Hundred-block is still available for city grids.
+
+| Setting | What it does | Default |
+|---|---|---|
+| **Ranging method** | **Interval** (by distance), Hundred-block, Proportional along length, or From address points | **Interval** |
+| **Distance per number** + units | Ground distance for one address number. Use the same value as the house-number distance in step 12 | **5.28 feet** |
+| **Scope** | Street chains (connected pieces with the same street key are numbered in order), or each feature on its own | Street chains |
+| **Start numbering** | Continue from the connected piece upstream; keep the first piece's existing From; or always start at the base address | Continue from upstream |
+| **Base address** | The number a street starts at when there's nothing upstream | **100** |
+| **Block size** | Hundred-block only: numbers per block (1000 for some rural grids) | 100 |
+| **Left side / Right side** | The parity used when a road has none | **Odd left, even right** |
+| **Keep a valid existing Parity_L / Parity_R** | **The centerline's own parity is used first.** A road already marked O, E, B, or Z keeps it (Z = no addresses on that side). Untick to overwrite every road with the left/right setting | **On** |
+| **Address points** (group) | The point layer, house-number field, and street field. Needed for the *From address points* method, and makes splits keep houses on the piece they front | Empty |
+| **Overwrite existing ranges** | Off: only roads with empty or 0–0 ranges are filled | On |
+| **Write Parity_L / Parity_R** | Writes the parity the range was built with | On |
+| **Set DateUpdate** | On changed roads | On |
+| **Connectivity tolerance** | How close two line ends must be to count as connected | 0.5 m |
+
+**Parity, in short:** the road's own Parity_L / Parity_R comes first. Only a road with no parity (or an invalid one) gets the left/right setting. To give a road a parity on purpose, type it on the road before ranging; to start over, untick *Keep a valid existing Parity* for one run.
+
+> 💡 Try **Range selected** on a few roads first and check the numbers before you use **Range layer**.
+
+### 10. What happens while you edit — Settings → Editing
+
+| Setting | What it does | Default |
+|---|---|---|
+| **Re-range pieces after Split Features** | Divides the original range across the pieces | On |
+| **Split method** | Proportional and anchored to address points; proportional to length only; or from the address points | Anchored (recommended) |
+| **Combine ranges after Merge** | The merged road gets the lowest From and highest To. Select the pieces before merging | Off |
+| **Split existing roads where a new road creates an intersection** | Also used by **Draw road** | On |
+| **…also where the new road crosses** | Turn off where you have overpasses | On |
+| **After reshape / vertex edit** | Do nothing; recompute To by distance; or re-derive from address points | Do nothing |
+| **Manage field split policies** | Ranges are copied to both pieces, NGUID is cleared on the new piece | On |
+| **Give new and split-off features a new NGUID** | Uses the agency identifier from step 3 | On |
+
+### 11. Address layers — NENA ▾ → Addresses
+
+| Setting | What to do |
+|---|---|
+| **Address points** | Pick your site/structure address layer, or **Create** one |
+| **Driveways** | Optional. Needed only for the **Driveway** tool |
+| **Access points** | Pick or create the access-point layer. **Place address** saves one 10 ft off the road for each address |
+| **Address schema → Template ▾** | Uses your state's address field list instead of the built-in NENA one |
+| **Placement** | The placement value written on new points (default *Structure*) |
+| **Show where selected addresses were addressed on the road** | Map markers for selected addresses (on by default) |
+
+Also set the address-point layer under **Streets** (so renames update addresses) and on **Ranges → Method → Address points** (so splits respect houses).
+
+### 12. House-number rules — Settings → Address rules
+
+| Setting | What it does | Default |
+|---|---|---|
+| **Method** | **Defined distance** (the segment's From plus one number per distance from its start), Interpolate within the segment's range, or Fixed frontage interval | **Defined distance** |
+| **Distance per number** + units | Use the same value as the ranging distance in step 9 | **5.28 feet** |
+| **Number at the road start** | Used only when the clicked segment has no From number | 100 |
+| **Rounding** | Nearest, or round down | Nearest |
+| **Parity** (left / right) | Used when the centerline has no parity of its own | **Odd left, even right** |
+| **Use the centerline's own Parity_L / Parity_R first** | **On:** an O or E on the clicked side of the road decides odd/even. **Off:** the left/right setting always wins and a mismatch is only reported. A side marked **Z** never gets addresses | **On** |
+| **Keep numbers increasing between neighbouring addresses** | Keeps order along the segment | On |
+| **Number taken** | Use the next free number, add a suffix (101A), or ask | Next free number |
+| **Overrides per community** | A different method, distance, or start number for one MSAG community, ESN, ZIP, city, or county | None |
+
+### 13. Checks — NENA ▾ → Check → Checks
+
+Tick the checks you want, set the **Gap tolerance** (extra numbers allowed between pieces before a gap is reported), and an **Overlap scope** field if the same street name may repeat in different communities. For the MSAG comparison, load the MSAG table and pick its Street, Community, Low, High, and Odd/even columns on **Check → MSAG**.
+
+### 14. Save the project
+
+**Project → Save.** The settings live in the project. Your layer edits are saved separately, with **Save Edits** on each layer.
+
+### Quick test after configuring
+
+1. Select two or three connected pieces of one street and click **Range**. Odd numbers should be on the left (looking from the green dot to the red square), and the numbers should continue from piece to piece.
+2. Click **Address**, click one of those roads, then a building. The number should fall inside that side's From–To, with the right odd/even, ZIP, community, and ESN.
+3. Click **Validate**. Fix anything it lists before ranging the whole layer.
 
 ---
 
@@ -424,8 +628,8 @@ Set the method under **Settings → Address rules**. The first unit in a Place u
 | Step | What happens |
 |---|---|
 | **Left or right** | Comes from the direction the segment was drawn. Stand at its first point (green dot) facing its last point (red square): left is left |
-| **Odd or even** | Comes from your settings: by default **odd on the left, even on the right**. If the segment's own Parity_L/Parity_R says otherwise, you get a warning and your settings are still used. Re-range the segment to fix it. (To let the segment's parity win instead, tick that option on Address rules.) A side marked **Z** gets no addresses |
-| **The number: Calculated** (default) | The segment's **From** number on that side, plus one number for every set distance from the segment's first point. 5.28 ft per number is about 1,000 numbers per mile. A segment with no From number starts at the start number you set |
+| **Odd or even** | **The centerline's own Parity_L / Parity_R comes first:** an O or E on that side of the clicked segment decides. A segment with no parity (or B) uses your settings, by default **odd on the left, even on the right**. Untick **Use the centerline's own Parity_L / Parity_R first** on Address rules to make your settings always win; a segment that disagrees is then reported. A side marked **Z** gets no addresses |
+| **The number: Defined distance** (default) | The segment's **From** number on that side, plus one number for every set distance from the segment's first point. 5.28 ft per number is about 1,000 numbers per mile. A segment with no From number starts at the start number you set |
 | **The number: Interpolated** | Placed between the segment's **From** and **To** on that side, in proportion to how far along the segment you clicked |
 | **The number: By frontage** | The segment's From, plus a fixed count of numbers for each lot width from the segment's first point |
 | **Order** | Stays between the addresses already on that side of the **same segment**, so numbers keep increasing along it |
@@ -463,19 +667,19 @@ Open **NENA ▾ → Ranges**.
 **The basics (all methods):**
 
 - Draw roads in the direction numbers go up. **From** is at the start of the line.
-- Left and right follow that direction. Usually odd numbers are on the left and even on the right. Existing parity, including **Z** (no addresses), is kept unless you turn that off.
+- Left and right follow that direction. **A road's own Parity_L / Parity_R is used first**, including **Z** (no addresses). Roads with no parity get the Left/Right setting: odd on the left and even on the right by default.
 - **Street chains** numbers connected pieces of the same street in order, so they don't overlap. **Each feature** numbers every piece on its own.
 
 ![The Ranges window](docs/images/ranges-window.png)
 
 | Method | What you get | Good for |
 |---|---|---|
+| **Interval** (default) | Numbers go up by distance (5.28 ft ≈ 1,000 per mile) | Distance-based (county-wide, rural) addressing |
 | **Hundred-block** | Each piece gets the next block: 100–198/101–199, then 200–298/201–299… | City grids |
-| **Interval** | Numbers go up by distance (5.28 ft ≈ 1,000 per mile) | Rural distance-based addressing |
 | **Proportional** | Spreads a low–high range across the street by length, and can bend around existing addresses | Fitting existing numbers |
 | **From address points** | Builds the range from the house numbers near each piece | Data with good address points |
 
-> 💡 **Numbering by distance?** Ranging has its own method, separate from the house-number settings on the Addresses window. The Ranges window shows the current one (*Method: Hundred-block* above). If you want ranges to grow with distance, set **Method → Ranging method** to **Interval** and enter your distance (for example 5.28 ft). Hundred-block always gives each piece a full block (100–199), however long it is. **Draw road** always ranges by distance.
+> 💡 **Ranging and house numbers have separate distance settings.** Ranging uses **Ranges → Method → Distance per number**; new addresses use **Settings → Address rules → Distance per number**. Both default to 5.28 ft, so keep them the same. A layer set up with an earlier version keeps the method it was saved with (often Hundred-block, which gives each piece a full block however long it is); switch it to **Interval** on **Ranges → Method**. **Draw road** always ranges by distance.
 
 **Range selected** and **Range layer** run as one undo step.
 
@@ -534,7 +738,7 @@ Open **NENA ▾ → Settings**. These are things you set once. **They save autom
 |---|---|
 | **Fields** | Match your road layer's columns to NENA names |
 | **Sides** | ZIP, MSAG community, and ESN polygon layers |
-| **Defaults** | Values like state, county, and one-way that fill **only empty** fields. Leave parity blank if you want ranging to set it |
+| **Defaults** | Values like state, county, agency, and one-way that fill **only empty** fields. Leave parity blank so ranging sets it |
 | **Street rules** | When two names count as the same, and what a rename does |
 | **Address rules** | How a new address gets its number |
 | **Editing** | What happens when you split, merge, or add a road, plus IDs |
@@ -646,6 +850,7 @@ To see one feature's history, filter the history table by its ID and sort by ver
 
 ## What's new
 
+- **3.6.7** — New **How to configure** section in this guide: every setting for streets, sides, ranges, and addressing, with a checklist. New defaults: ranging is **by distance** (Interval, 5.28 ft per number), and new addresses use **the centerline's own Parity_L / Parity_R first** (your left/right setting is used when the road has none). Layers and projects set up earlier keep their saved choices.
 - **3.6.5** — Code clean-up for the QGIS plugin repository's security and quality scan. Nothing changes in how the plugin works.
 - **3.6.4** — First release on the QGIS plugin repository (marked experimental). The plugin is now called **NENA Addressing and RCL Tools**. The plugin's folder (its ID in QGIS) is now `nena_addressing_and_rcl_tools`; remove an older `nena_rcl_tools` copy when you install this one. New **Draw road** button in the Streets window: pick a street, draw the line, and the new road is named and ranged by distance (the same spacing as your house numbers). After **Add…**, the plugin offers to draw the new street right away. Drop-down lists are real drop-downs again; they had turned into text boxes with suggestions, which made fields such as St_PosTyp look like they had no list. Fixed: creating a new schema in a GeoPackage stopped with a `createFeature` error on QGIS 4. Fixed: saving new access points showed a false "Cannot delete these access points" warning. Fixed: repeated "wrapped C/C++ object has been deleted" warnings after a layer was removed or the project reloaded.
 

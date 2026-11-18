@@ -368,3 +368,13 @@ def test_new_road_ranging_uses_house_number_spacing():
     rs.interval_distance = 3.2
     rs.interval_units = "meters"
     assert distance_overrides(pcfg, rs)["interval_distance"] == 3.2
+
+
+def test_defaults_range_by_distance_and_use_centerline_parity_first():
+    from nena_addressing_and_rcl_tools.core import config as C
+    from nena_addressing_and_rcl_tools.core.project_config import ProjectConfig
+    cfg = C.PluginConfig()
+    assert cfg.ranging.method == C.M_INTERVAL
+    assert cfg.ranging.interval_distance == 5.28 and cfg.ranging.interval_units == "feet"
+    assert cfg.ranging.respect_existing_parity is True
+    assert ProjectConfig().addresses.segment_parity_wins is True
