@@ -48,6 +48,7 @@ class NenaRclPlugin:
         self.driveway_tool = None
         self.units_tool = None
         self.overlay = None
+        self.history_window = None
 
     # ------------------------------------------------------------------
     def initGui(self):  # noqa: N802 - QGIS API name
@@ -61,10 +62,13 @@ class NenaRclPlugin:
         self.street_watchers = StreetWatcherManager(self._notify)
         # Connect before the version watcher so a save records the login that was just stamped.
         self.editor_watchers = EditorUserWatcher(self._notify)
+        # Calculated fields before the version watcher, so a version stores the calculated values.
+        from .core.derived import DerivedFieldsWatcher
+        self.derived_watchers = DerivedFieldsWatcher(self._notify)
         self.archive_watchers = ArchiveWatcher(self._notify)
         self.access_guard = AccessGuard(self._notify)
 
-        self._menu_groups = {"windows": [], "centerline": [], "addressing": [], "setup": []}
+        self._menu_groups = {"windows": [], "centerline": [], "addressing": [], "history": [], "setup": []}
 
         # Windows: one labelled "NENA" drop-down, so no window button shares a picture with a tool.
         self.act_streets = self._add_menu_action("streets.svg", "Streets",
@@ -136,6 +140,12 @@ class NenaRclPlugin:
                                           use_toggled=False, short="Units")
         self.act_undo_addr = self._add_action("undo_address.svg", "Undo last address",
                                               lambda *_: self._undo_address(), "addressing", short="Undo")
+        self._toolbar_separator()
+        # History of the selected road or address, with roll back
+        self.act_history = self._add_action("history.svg",
+                                            "History of the selected road or address: every saved version, "
+                                            "what changed, and roll back",
+                                            lambda *_: self.show_history(), "history", short="History")
         # Setup (menus only)
         self.act_style = self._add_menu_action("style.svg", "Style NENA layers (roads, addresses, driveways)",
                                                lambda *_: self._dock().style_layers(), "setup")
@@ -188,6 +198,11 @@ class NenaRclPlugin:
         if self.overlay is not None:
             self.overlay.unload()
             self.overlay = None
+        if self.history_window is not None:
+            self.history_window.cleanup()
+            self.history_window.close()
+            self.history_window.deleteLater()
+            self.history_window = None
         if self.split_tool is not None:
             if self.iface.mapCanvas().mapTool() is self.split_tool:
                 self.iface.mapCanvas().unsetMapTool(self.split_tool)
@@ -229,6 +244,9 @@ class NenaRclPlugin:
         if self.archive_watchers is not None:
             self.archive_watchers.unload()
             self.archive_watchers = None
+        if getattr(self, "derived_watchers", None) is not None:
+            self.derived_watchers.unload()
+            self.derived_watchers = None
 
     # ------------------------------------------------------------------
     def _add_action(self, icon_name, text, slot, group, checkable=False, use_toggled=True, toolbar=True,
@@ -340,7 +358,7 @@ class NenaRclPlugin:
     def _build_menu(self):
         menu = QMenu(MENU, self.iface.mainWindow())
         titles = (("windows", "Windows"), ("centerline", "Centerlines"), ("addressing", "Addressing"),
-                  ("setup", "Setup"))
+                  ("history", "History"), ("setup", "Setup"))
         started = False
         for key, title in titles:
             actions = self._menu_groups.get(key) or []
@@ -511,11 +529,26 @@ class NenaRclPlugin:
         if self.overlay:
             self.overlay.refresh()
 
+    # -- history ---------------------------------------------------------------
+    def show_history(self):
+        """Open the history window on the selected road or address."""
+        if self.history_window is None:
+            from .ui.history_window import HistoryWindow
+            self.history_window = HistoryWindow(self.iface, self._notify, self.iface.mainWindow())
+        self.history_window.open_for_selection()
+
+    def _refresh_history(self):
+        if self.history_window is not None and self.history_window.isVisible():
+            self.history_window.open_for_selection()
+
     def _config_saved(self):
+        self._refresh_history()
         if self.street_watchers is not None:
             self.street_watchers.refresh()
         if self.editor_watchers is not None:
             self.editor_watchers.refresh()
+        if getattr(self, "derived_watchers", None) is not None:
+            self.derived_watchers.refresh()
         if self.archive_watchers is not None:
             self.archive_watchers.refresh()
         if self.access_guard is not None:
@@ -528,12 +561,14 @@ class NenaRclPlugin:
             apply_value_relations(load_project_config(), self.dock.layer if self.dock is not None else None)
 
     def _project_loaded(self, *args):
+        QTimer.singleShot(0, self._refresh_history)
         if self.overlay is not None:
             self.overlay.refresh()
         if self.dock is not None:
             self.dock.streets.load()
             self.dock.addresses.load()
             self.dock.lookups.load()
+            self.dock.zones_settings.load()
             self.dock.sync_archive_option()
         # Version and lookup tables into their subgroups (or hidden, if the project says so).
         QTimer.singleShot(0, self._arrange_support_tables)

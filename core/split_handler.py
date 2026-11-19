@@ -177,7 +177,7 @@ class LayerWatcher(QObject):
         try:
             from .project_config import load_project_config
             pcfg = load_project_config()
-            if not (pcfg.addresses.attribution_rules or []):
+            if not _side_rules(pcfg):
                 return
             from .addressing.engine import attribute_centerline_sides
             from .addressing.side_split import attribution_context
@@ -577,3 +577,9 @@ class WatcherManager:
         w = self.watchers.pop(layer_id, None)
         if w is not None:
             w.detach()
+
+
+def _side_rules(pcfg):
+    """Settings, Sides rules plus PSAP from the PSAP zone layer (see zones.side_rules)."""
+    from .zones import side_rules
+    return side_rules(pcfg)

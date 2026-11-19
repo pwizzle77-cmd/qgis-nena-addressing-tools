@@ -47,6 +47,11 @@ SSAP_FIELDS = [
     FieldDef("FullName", OPT, S, 254, "Full road name",
              ("FULLNAME", "FULL_NAME", "FULL_STREET", "STREET_FULL", "FULLROAD", "FULL_ROAD",
               "FULLROADNAME", "FULL_ROAD_NAME")),
+    FieldDef("FullAddr", OPT, S, 254,
+             "Plugin: full address (number, full road name, unit), calculated on save and when the master "
+             "street name changes",
+             ("FULL_ADDR", "FULLADDRESS", "FULL_ADDRESS", "SITE_ADDR", "SITEADDR", "SITE_ADDRESS", "ADDRESS",
+              "ADDR_FULL")),
     FieldDef("ESN", C, S, 5, "Emergency Service Number"),
     FieldDef("MSAGComm", C, S, 30, "MSAG community name", ("MSAG", "MSAG_COMM")),
     FieldDef("Post_Comm", C, S, 40, "Postal community name", ("POSTCOMM", "PO_NAME")),
@@ -108,6 +113,7 @@ PRIMARY_BOUNDARIES = (
     ("PostCode", "ZIP code"),
     ("MSAGComm", "MSAG community"),
     ("ESN", "ESN"),
+    ("PSAP", "PSAP"),
 )
 
 # community keys -> (address field, centerline left field, centerline right field)
@@ -123,4 +129,5 @@ COMMUNITY_FIELDS = {
     "State": ("State", "State_L", "State_R"),
     "Country": ("Country", "Country_L", "Country_R"),
     "AddCode": ("AddCode", "AddCode_L", "AddCode_R"),
+    "PSAP": ("PSAP", "PSAP_L", "PSAP_R"),
 }

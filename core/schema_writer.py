@@ -143,7 +143,7 @@ def _fields(defs) -> QgsFields:
 
 def _write_one(target: SchemaTarget, table: str, defs, wkb_name: str, crs) -> None:
     fields = _fields(defs)
-    wkb = {"None": None, "Point": _wkb("Point"), "LineString": _wkb("LineString")}[wkb_name]
+    wkb = None if wkb_name == "None" else _wkb(wkb_name)
     if target.kind in ("gpkg", "gdb"):
         tables.write_ogr_table(target.path, table, fields, wkb, crs, target.driver or "GPKG")
         return
@@ -158,7 +158,8 @@ def _write_one(target: SchemaTarget, table: str, defs, wkb_name: str, crs) -> No
 
 def _wkb(name: str):
     from qgis.core import Qgis
-    return {"Point": Qgis.WkbType.Point, "LineString": Qgis.WkbType.LineString}[name]
+    return {"Point": Qgis.WkbType.Point, "LineString": Qgis.WkbType.LineString,
+            "MultiPolygon": Qgis.WkbType.MultiPolygon}[name]
 
 
 def _open_one(target: SchemaTarget, table: str, title: str):

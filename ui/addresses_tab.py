@@ -7,7 +7,7 @@ from qgis.core import QgsProject
 from qgis.gui import QgsMapLayerComboBox
 from qgis.PyQt.QtCore import pyqtSignal
 from qgis.PyQt.QtWidgets import (QCheckBox, QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox,
-                                 QHBoxLayout, QHeaderView, QInputDialog, QLabel, QMenu, QPushButton,
+                                 QHBoxLayout, QHeaderView, QInputDialog, QLabel, QMenu, QMessageBox, QPushButton,
                                  QSpinBox, QTableWidgetItem, QVBoxLayout, QWidget)
 
 from ..compat import point_layer_filter
@@ -193,6 +193,18 @@ class AddressesTab(QWidget):
         b.setToolTip("Give the selected address points (all, when none are selected) the Default value of "
                      "each list where the field is empty: status, type, placement, agency. Filled fields stay.")
         b.clicked.connect(self.fill_empty)
+        v.addWidget(b)
+        lay.addWidget(g)
+
+        g = QGroupBox("Access points")
+        v = QVBoxLayout(g)
+        v.addWidget(hint("Routing needs an access point for every address. Imported addresses have none: "
+                         "this creates them 10 feet off the road, from the driveway start, Access_X / "
+                         "Access_Y, or the nearest road, and links each address by AccessPointID."))
+        b = QPushButton("Create access points…")
+        b.setToolTip("Create access points for the selected address points (all, when none are selected) "
+                     "that have none. Addresses already linked are left alone.")
+        b.clicked.connect(self.create_access_points)
         v.addWidget(b)
         lay.addWidget(g)
 
@@ -452,6 +464,50 @@ class AddressesTab(QWidget):
             n = LK.fill_empty_from_lookups(pcfg, "address", ctx.addr, fids)
             self.dock._msg(f"Filled empty fields on {n} address point(s) from the lookup defaults.", "Success")
         self.dock._guard(do)
+
+    def create_access_points(self):
+        def do():
+            from ..core.addressing import access_build as AB
+            ctx = self.context()
+            fids = ctx.addr.selectedFeatureIds() or None
+            scope = f"the {len(fids)} selected address point(s)" if fids else "every address point"
+            result = self.dock._with_progress(lambda cb: AB.plan_access_points(ctx, fids, cb))
+            if not result.plans:
+                self._select_skipped(ctx, result)
+                self.dock._msg("No access points to create: " + result.summary()
+                               + self._skip_note(result), "Info")
+                return
+            text = (f"Checked {scope}.\n\n{result.summary()}{self._skip_note(result)}\n\n"
+                    "The new access points and the address links go into edit sessions on "
+                    f"'{ctx.access.name()}' and '{ctx.addr.name()}' as one undo step each. "
+                    "Save those layers to keep them.")
+            if not ctx.addr_acc.has("AccessPointID"):
+                text += f"\n\nAn AccessPointID field will be added to '{ctx.addr.name()}'."
+            box = QMessageBox.question(self, "Create access points", text,
+                                       QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel)
+            if box != QMessageBox.StandardButton.Ok:
+                return
+            AB.ensure_link_field(ctx)
+            AB.apply_access_points(ctx, result, commit=False)
+            self._select_skipped(ctx, result)
+            note = " The skipped addresses are selected." if result.skipped else ""
+            self.dock._msg(result.summary() + " Save the access point and address layers to keep them." + note,
+                           "Success")
+        self.dock._guard(do)
+
+    @staticmethod
+    def _skip_note(result) -> str:
+        if not result.skipped:
+            return ""
+        reasons = {}
+        for _fid, reason in result.skipped:
+            reasons[reason] = reasons.get(reason, 0) + 1
+        return " Skipped: " + "; ".join(f"{n} — {reason}" for reason, n in sorted(reasons.items())) + "."
+
+    @staticmethod
+    def _select_skipped(ctx, result):
+        if result.skipped:
+            ctx.addr.selectByIds([fid for fid, _reason in result.skipped])
 
     def attribute_addresses(self):
         def do():

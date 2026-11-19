@@ -93,10 +93,17 @@ class StreetService:
         if rcl is not None:
             cfg = centerline_cfg or _cfg_from_layer(rcl)
             cfg = _with_street_id(cfg, rcl, s.street_id_field)
+            if not cfg.mapping.get("FullName"):
+                found = auto_map([f.name() for f in rcl.fields()]).get("FullName")
+                if found:
+                    cfg = PluginConfig.from_dict(cfg.to_dict())
+                    cfg.mapping["FullName"] = found
             self.linked.append(LinkedLayer("centerline", rcl, FieldAccessor(rcl, cfg)))
         addr = address_layer or layer_for(s, "address")
         if addr is not None:
-            mapping = dict(s.address_mapping) or address_auto_mapping(addr, s.street_id_field)
+            # Saved choices win; the number, unit, and FullAddr columns are found by name.
+            mapping = address_auto_mapping(addr, s.street_id_field)
+            mapping.update({k: v for k, v in s.address_mapping.items() if v})
             acfg = PluginConfig()
             acfg.mapping = mapping
             self.linked.append(LinkedLayer("address", addr, FieldAccessor(addr, acfg)))
@@ -200,6 +207,21 @@ class StreetService:
         vals["FullName"] = N.full_name(parts) or None
         return vals
 
+    @staticmethod
+    def _with_full_addr(ll, f, vals: dict) -> dict:
+        """Add FullAddr to an address change, worked out from the feature with ``vals`` applied."""
+        if ll.role != "address" or not ll.acc.has("FullAddr"):
+            return vals
+        from ..derived import full_address
+        names = ("AddNum_Pre", "Add_Number", "AddNum_Suf", "Unit", "UnitType", "FullName") + tuple(N.NAME_PARTS)
+        merged = {n: ll.acc.get(f, n) for n in names if ll.acc.has(n)}
+        merged.update(vals)
+        text = full_address(merged, merged.get("FullName") or None) or None
+        if (text or None) != (N.clean(ll.acc.get(f, "FullAddr")) or None):
+            vals = dict(vals)
+            vals["FullAddr"] = text
+        return vals
+
     def assign(self, sid: str, fids: Sequence[Hashable], role: str = "centerline") -> int:
         rec = self.repo.by_id().get(sid)
         if rec is None:
@@ -211,7 +233,10 @@ class StreetService:
             raise ConfigError(f"The {role} layer has no '{self.pcfg.streets.street_id_field}' field. "
                               "Add it (Streets ▸ Add to layers) or map it.")
         stamp = datetime.now().replace(microsecond=0)
-        changes = {fid: self._stamp_vals(ll, self._name_vals(rec.parts, sid), stamp) for fid in fids}
+        changes = {}
+        for f in ll.layer.getFeatures(QgsFeatureRequest().setFilterFids(list(fids))):
+            vals = self._with_full_addr(ll, f, self._name_vals(rec.parts, sid))
+            changes[f.id()] = self._stamp_vals(ll, vals, stamp)
         with suppressed():
             return apply_changes(ll.layer, ll.acc, changes, "NENA: assign street name")
 
@@ -232,6 +257,7 @@ class StreetService:
             if ll.acc.has("FullName") and N.clean(ll.acc.get(f, "FullName")) != full:
                 diff["FullName"] = full or None
             if diff:
+                diff = self._with_full_addr(ll, f, diff)
                 changes[f.id()] = self._stamp_vals(ll, diff, stamp)
         with suppressed():
             return apply_changes(ll.layer, ll.acc, changes, "NENA: copy street name")
@@ -263,7 +289,8 @@ class StreetService:
                 if ll.acc.has("FullName") and N.clean(ll.acc.get(f, "FullName")) != full:
                     diff["FullName"] = full
                 if diff:
-                    changes[f.id()] = self._stamp_vals(ll, {p: (v or None) for p, v in diff.items()}, stamp)
+                    diff = self._with_full_addr(ll, f, {p: (v or None) for p, v in diff.items()})
+                    changes[f.id()] = self._stamp_vals(ll, diff, stamp)
             result[ll.role] = apply_changes(ll.layer, ll.acc, changes, command)
         return result
 
@@ -357,7 +384,8 @@ class StreetService:
                 rec = recs.get(current)
                 full = N.full_name(rec.parts) if rec is not None else ""
                 if rec is not None and ll.acc.has("FullName") and N.clean(ll.acc.get(f, "FullName")) != full:
-                    changes[f.id()] = self._stamp_vals(ll, {"FullName": full or None}, stamp)
+                    changes[f.id()] = self._stamp_vals(ll, self._with_full_addr(ll, f, {"FullName": full or None}),
+                                                       stamp)
                 continue
             rec = by_key.get((self.rule.scope_of(self._scope_of(ll, f)), key))
             if rec is None:
@@ -371,7 +399,7 @@ class StreetService:
                 if diff:
                     vals.update(diff)
                     rewritten += 1
-            changes[f.id()] = self._stamp_vals(ll, vals, stamp)
+            changes[f.id()] = self._stamp_vals(ll, self._with_full_addr(ll, f, vals), stamp)
             linked += 1
         apply_changes(ll.layer, ll.acc, changes, "NENA: link street names")
         return linked, rewritten
@@ -462,6 +490,11 @@ def address_auto_mapping(layer, street_id_field: str = "StreetID") -> Dict[str, 
     i = layer.fields().lookupField(street_id_field)
     if i >= 0:
         m["StreetID"] = layer.fields().at(i).name()
+    from ..addressing.ssap import SSAP_FIELDS
+    extra = auto_map(names, SSAP_FIELDS)
+    for key in ("AddNum_Pre", "Add_Number", "AddNum_Suf", "Unit", "UnitType", "FullAddr"):
+        if extra.get(key):
+            m[key] = extra[key]
     from ..layer_access import _FULL_NAME_ALIASES
     for alias in _FULL_NAME_ALIASES:
         j = layer.fields().lookupField(alias)

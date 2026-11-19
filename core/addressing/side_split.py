@@ -50,7 +50,7 @@ def split_where_side_changes(layer: QgsVectorLayer, cfg: PluginConfig, pcfg: Pro
     :returns: {"split", "pieces", "addresses", "skipped"}
     """
     report = {"split": 0, "pieces": 0, "addresses": 0, "skipped": []}
-    if not (pcfg.addresses.attribution_rules or []):
+    if not _side_rules(pcfg):
         raise ConfigError("Choose the ZIP, MSAG, ESN, or city limits polygon layers under Settings, Sides first.")
     ctx = _SampleCtx(layer, cfg, pcfg)
     off = gu.metres_to_layer_units(3.0, layer.crs())
@@ -192,3 +192,9 @@ def _copy_onto_addresses(layer, cfg, pcfg, piece_ids: Sequence[Hashable]) -> int
         if vals:
             changes[feat.id()] = vals
     return apply_changes(ctx.addr, ctx.addr_acc, changes, COPY_COMMAND)
+
+
+def _side_rules(pcfg):
+    """Settings, Sides rules plus PSAP from the PSAP zone layer (see zones.side_rules)."""
+    from ..zones import side_rules
+    return side_rules(pcfg)

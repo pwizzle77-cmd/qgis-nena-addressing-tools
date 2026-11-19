@@ -79,11 +79,30 @@ def preferred_centerline(candidates, pcfg=None) -> Optional[QgsVectorLayer]:
         except Exception:  # noqa: BLE001
             pcfg = None
     usable = [c for c in candidates if isinstance(c, QgsVectorLayer) and not not_a_centerline(c, pcfg)]
-    if pcfg is not None:
-        remembered = layer_for(pcfg.streets, "centerline")
-        if remembered is not None and any(c.id() == remembered.id() for c in usable):
-            return remembered
+    remembered = layer_for(pcfg.streets, "centerline") if pcfg is not None else None
+    if remembered is not None and not any(c.id() == remembered.id() for c in usable):
+        remembered = None
+    # The settings live on the centerline layer, so a layer that has them comes first.
+    if remembered is not None and C.has_config(remembered):
+        return remembered
     for c in usable:
         if C.has_config(c):
             return c
+    if remembered is not None:
+        return remembered
     return usable[0] if usable else None
+
+
+def should_follow(new_layer, current) -> bool:
+    """Switch the centerline when another line layer is made active in the Layers panel?
+
+    Not away from a configured centerline to a line layer that has no NENA
+    settings (railroads, a boundary drawn as lines, …): the settings would
+    then be read from, and saved onto, the wrong layer. Choose that layer in
+    the Centerline picker instead.
+    """
+    if new_layer is None or new_layer is current:
+        return False
+    if current is None or not C.has_config(current):
+        return True
+    return C.has_config(new_layer)

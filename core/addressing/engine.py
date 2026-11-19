@@ -691,7 +691,7 @@ def community_from_segment(ctx: AddressContext, feat, side: str, fraction: float
     onto the centerline and copied. The house point itself is not sampled.
     The third dict is the empty centerline fields this calculation fills.
     """
-    rules = ctx.pcfg.addresses.attribution_rules or []
+    rules = _side_rules(ctx.pcfg)
     samples: Dict[str, Tuple[Dict[str, str], List[str]]] = {}
     if rules:
         off = gu.metres_to_layer_units(offset_m, ctx.rcl.crs())
@@ -732,7 +732,7 @@ def _stamp_centerline_side(ctx: AddressContext, plan: AddressPlan) -> None:
 def attribution_values(ctx: AddressContext, pt_rcl: QgsPointXY) -> Tuple[Dict[str, str], List[str]]:
     """Evaluate the boundary rules at a point (centerline CRS)."""
     out, notes = {}, []
-    for rule in ctx.pcfg.addresses.attribution_rules or []:
+    for rule in _side_rules(ctx.pcfg):
         value, note = _rule_value(ctx, rule, pt_rcl)
         if note:
             notes.append(note)
@@ -757,7 +757,7 @@ def boundary_side_values(ctx, geom, fraction: float, side: str, offset: float) -
     a tie. Other rules use the single point `offset` off the line.
     """
     out, notes = {}, []
-    for rule in ctx.pcfg.addresses.attribution_rules or []:
+    for rule in _side_rules(ctx.pcfg):
         votes, first_note = [], None
         for dist in _rule_depths(ctx, rule, offset):
             pt = offset_point(geom, fraction, side, dist)
@@ -825,7 +825,7 @@ def _apply_outside_only(ctx, out: Dict[str, str]) -> None:
     A rule marked ``outside_of`` (unincorporated community) only applies
     where that other rule gave its outside value; inside a city it is blank.
     """
-    rules = ctx.pcfg.addresses.attribution_rules or []
+    rules = _side_rules(ctx.pcfg)
     by_target = {r.get("target"): r for r in rules}
     for rule in rules:
         parent_key = rule.get("outside_of")
@@ -1409,3 +1409,9 @@ def addresses_on_segments(ctx: AddressContext, seg_fids: Sequence[Hashable]) -> 
         if loc is not None and loc[1] in seg_set:
             out.append(f.id())
     return out
+
+
+def _side_rules(pcfg):
+    """Settings, Sides rules plus PSAP from the PSAP zone layer (see zones.side_rules)."""
+    from ..zones import side_rules
+    return side_rules(pcfg)
