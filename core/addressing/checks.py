@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Address validation: range, side/parity, order, duplicates, access point, boundary attribution."""
+"""Address validation: empty fields, range, side/parity, order, duplicates, access point, boundary attribution."""
 
 from collections import defaultdict
 from typing import Dict, List
@@ -13,7 +13,25 @@ from ..streets import names as N
 from . import numbering as NB
 from .engine import (AddressContext, StreetMeasure, _pt, attribute_centerline_sides, community_from_segment,
                      parse_number, stored_access)
-from .ssap import COMMUNITY_FIELDS
+from ..schema import MANDATORY
+from .ssap import COMMUNITY_FIELDS, SSAP_FIELDS
+
+# Not NENA mandatory, but the fields that are most often left empty and have a lookup default.
+_ALSO_REQUIRED = ("AddressStatus", "AddressType", "Placement")
+# Filled by the plugin itself or checked elsewhere (number, street).
+_NOT_CHECKED = {"Add_Number", "DateUpdate"}
+
+
+def empty_required_fields(acc, feature) -> List[str]:
+    """Mandatory NENA address fields (and status, type, placement) that are mapped but empty."""
+    names = [fd.name for fd in SSAP_FIELDS if fd.req == MANDATORY] + list(_ALSO_REQUIRED)
+    out = []
+    for name in names:
+        if name in _NOT_CHECKED or not acc.has(name):
+            continue
+        if not N.clean(acc.get(feature, name)):
+            out.append(name)
+    return out
 
 
 def address_issues(ctx: AddressContext, check_attribution: bool = True) -> List[Issue]:
@@ -27,6 +45,10 @@ def address_issues(ctx: AddressContext, check_attribution: bool = True) -> List[
         if not f.hasGeometry():
             out.append(Issue(f.id(), ERROR, "ADDR_NO_GEOMETRY", "Address point has no geometry"))
             continue
+        empty = empty_required_fields(acc, f)
+        if empty:
+            out.append(Issue(f.id(), WARNING, "ADDR_EMPTY_FIELDS",
+                             "Empty: " + ", ".join(empty) + " (Fill empty fields gives them the lookup defaults)"))
         num, suf = parse_number(acc.get(f, "Add_Number"), acc.get(f, "AddNum_Suf") if acc.has("AddNum_Suf") else None)
         sid = N.clean(acc.get(f, "StreetID")) if acc.has("StreetID") else ""
         parts = {p: acc.get(f, p) for p in N.NAME_PARTS}

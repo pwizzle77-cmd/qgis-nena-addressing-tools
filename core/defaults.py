@@ -23,7 +23,14 @@ def is_blank(value) -> bool:
 
 
 def configured_defaults(cfg: PluginConfig) -> Dict[str, str]:
-    """NENA name -> text, dropping blanks."""
+    """
+    NENA name -> text, dropping blanks.
+
+    Road status, road class and discrepancy agency follow the Default ticked
+    in the lookup tables when those tables have the Default column: the
+    ticked value wins over Settings, Defaults, and an unticked list means no
+    default. Without lookup tables the settings apply as before.
+    """
     out = {}
     for name, raw in (getattr(cfg, "defaults", None) or {}).items():
         if raw is None:
@@ -31,7 +38,22 @@ def configured_defaults(cfg: PluginConfig) -> Dict[str, str]:
         text = str(raw).strip()
         if text:
             out[str(name)] = text
+    for name, code in lookup_defaults("centerline").items():
+        if code:
+            out[name] = code
+        else:
+            out.pop(name, None)
     return out
+
+
+def lookup_defaults(role: str) -> Dict[str, str]:
+    """The project's lookup-table defaults for one layer role (``{}`` when there are none)."""
+    try:
+        from .lookups import field_defaults
+        from .project_config import load_project_config
+        return field_defaults(load_project_config(), role, governed=True)
+    except Exception:  # noqa: BLE001 - no project, no lookup tables: the settings decide
+        return {}
 
 
 def empty_defaults(cfg: PluginConfig, acc: FieldAccessor, current: Dict[str, object]) -> Dict[str, str]:

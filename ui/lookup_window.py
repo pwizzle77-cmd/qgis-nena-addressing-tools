@@ -5,8 +5,9 @@ Lookup tables window.
 The top list shows every drop-down list, where it is stored, and how many
 fields use it. Create missing tables, Load values from my data, and Reconnect
 drop-downs act on all of them. Pick a list to edit it below: type in the
-cells, tick In list to show or retire a value, and drag rows (or use Up and
-Down) to change the order. Every change is saved straight away.
+cells, tick In list to show or retire a value, tick Default on the one value
+new features get, and drag rows (or use Up and Down) to change the order.
+Every change is saved straight away.
 """
 
 from qgis.PyQt.QtCore import Qt, QTimer, pyqtSignal
@@ -136,6 +137,10 @@ class LookupPage(QWidget):
                  "address points and centerlines. You review them before they are added."),
                 ("Reconnect drop-downs", self.reconnect,
                  "Set the drop-down on every field that has a list. Run this after adding fields or layers."),
+                ("Fill empty fields", self.fill_empty,
+                 "Give existing address points and centerlines the Default value of each list where the "
+                 "field is empty (status, type, road class, placement …). Values already filled stay. "
+                 "Only the selected features when some are selected."),
         ):
             button = QPushButton(text)
             button.setToolTip(tip)
@@ -376,6 +381,8 @@ class LookupPage(QWidget):
         kind, name = _kind_of(self._current)
         parent = kind == "domain" and bool(L.DOMAIN_PARENT.get(name))
         cols = ["Code", "Label"] + (["Parent"] if parent else []) + ["In list"]
+        if kind in ("table", "domain") and L.can_default(name):
+            cols.append("Default")
         return cols
 
     def _fill_values(self):
@@ -407,11 +414,17 @@ class LookupPage(QWidget):
                 if "Parent" in cols:
                     texts.append(str(row.get("Parent") or ""))
                 texts.append("")
+                if "Default" in cols:
+                    texts.append("")
                 item = QTreeWidgetItem(texts)
                 item.setFlags(flags)
                 item.setData(0, ROLE_FID, row.get("_fid"))
-                active = str(row.get("Active") or "Y").strip().upper() != "N"
-                item.setCheckState(len(cols) - 1, Qt.CheckState.Checked if active else Qt.CheckState.Unchecked)
+                active = L.is_active(row)
+                item.setCheckState(cols.index("In list"),
+                                   Qt.CheckState.Checked if active else Qt.CheckState.Unchecked)
+                if "Default" in cols:
+                    item.setCheckState(cols.index("Default"), Qt.CheckState.Checked
+                                       if L.is_default(row) and active else Qt.CheckState.Unchecked)
                 self.values.addTopLevelItem(item)
                 if keep_fid is not None and row.get("_fid") == keep_fid:
                     self.values.setCurrentItem(item)
@@ -479,9 +492,17 @@ class LookupPage(QWidget):
         cols = self._columns()
         name = cols[column] if column < len(cols) else ""
         fid = item.data(0, ROLE_FID)
+        if name == "Default":
+            self._set_default(item, item.checkState(column) == Qt.CheckState.Checked)
+            return
         if name == "In list":
             value = "Y" if item.checkState(column) == Qt.CheckState.Checked else "N"
             field = "Active"
+            if value == "N" and "Default" in cols \
+                    and item.checkState(cols.index("Default")) == Qt.CheckState.Checked:
+                # a retired value cannot stay the default
+                self._set_default(item, False, also_retire=True)
+                return
         else:
             value = item.text(column).strip()
             field = name
@@ -500,6 +521,52 @@ class LookupPage(QWidget):
             QTimer.singleShot(0, self._fill_values)
             return
         self._after_change(refill=False)
+
+    def _set_default(self, item, on, also_retire=False):
+        """Tick one value as the list's default (only one per list), or clear it."""
+        kind, name = _kind_of(self._current)
+        layer = self._layer()
+        if layer is None:
+            self.dock._msg("This list has no table yet. Click Create missing tables.", "Warning")
+            QTimer.singleShot(0, self._fill_values)
+            return
+        cols = self._columns()
+        if on and item.checkState(cols.index("In list")) != Qt.CheckState.Checked:
+            self.dock._msg("Tick In list first: a retired value cannot be the default.", "Warning")
+            QTimer.singleShot(0, self._fill_values)
+            return
+        try:
+            if not L.has_default_column(layer):
+                L.ensure_default_column(layer, name if kind == "table" else L.DOMAINS_KEY, {})
+        except ConfigError as exc:
+            self.dock._msg(str(exc), "Warning")
+            QTimer.singleShot(0, self._fill_values)
+            return
+        fid = item.data(0, ROLE_FID)
+        domain = name if kind == "domain" else ""
+
+        def mutate(target):
+            L.set_default(target, fid if on else None, domain)
+            if also_retire:
+                index = target.fields().indexFromName("Active")
+                if index >= 0:
+                    target.changeAttributeValue(fid, index, "N")
+            return True
+
+        if not self._edit("NENA: set lookup default", mutate):
+            QTimer.singleShot(0, self._fill_values)
+            return
+        pcfg = load_project_config()
+        try:
+            L.apply_layer_defaults(pcfg, self.dock.layer)
+        except Exception as exc:  # noqa: BLE001
+            self.dock._msg(f"Saved, but the field defaults could not be updated: {exc}", "Warning")
+        if on:
+            self.lbl.setText(f"New features get <b>{item.text(1) or item.text(0)}</b> when the field is empty. "
+                             "Use <b>Fill empty fields</b> to give it to existing features.")
+        else:
+            self.lbl.setText("This list has no default now. New features leave the field empty.")
+        self._after_change()
 
     def _order_items(self):
         return [self.values.topLevelItem(i) for i in range(self.values.topLevelItemCount())]
@@ -657,6 +724,25 @@ class LookupPage(QWidget):
             wired = sum(1 for item in self.report if item["status"] == "wired")
             self.dock._msg(f"{len(made)} lookup table(s) ready in {where}. {wired} field(s) now have a drop-down. "
                            "Next: Load values from my data to fill the local lists.", "Success")
+        self.dock._guard(do)
+
+    def fill_empty(self):
+        def do():
+            pcfg = load_project_config()
+            L.sync_defaults(pcfg, self.dock.layer)
+            if not any(L.list_defaults(pcfg).values()):
+                self.dock._msg("No list has a Default ticked yet. Tick Default on a value first.", "Info")
+                return
+            layers = L.feature_layers(pcfg, self.dock.layer)
+            done = []
+            for role, title in (("address", "address point(s)"), ("centerline", "centerline(s)")):
+                layer = layers.get(role)
+                if layer is None:
+                    continue
+                fids = layer.selectedFeatureIds() or None
+                n = L.fill_empty_from_lookups(pcfg, role, layer, fids)
+                done.append(f"{n} {title}")
+            self.dock._msg("Filled empty fields from the defaults on " + " and ".join(done) + ".", "Success")
         self.dock._guard(do)
 
     def reconnect(self):

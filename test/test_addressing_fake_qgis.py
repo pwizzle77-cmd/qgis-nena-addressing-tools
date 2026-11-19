@@ -52,6 +52,8 @@ def _poly(lyr, attrs, x0, x1):
 
 @pytest.fixture()
 def world():
+    # lookup tables are found by name in the project; start each test with an empty one
+    QgsProject.instance().layers.clear()
     rcl = _layer("rcl", RCL)
     rcl.add_committed(["Main", "St", "S1", "R1", 101, 199, 100, 198, "O", "E", "TOWN A", "TOWN A"], [(0, 0), (100, 0)])
     rcl.add_committed(["Main", "St", "S1", "R2", 201, 299, 200, 298, "O", "E", "TOWN A", "TOWN A"],
@@ -612,3 +614,92 @@ def test_city_limits_without_depth_use_one_point(world):
     ctx = E.AddressContext(pcfg, rcl, cfg)
     E.attribute_centerline_sides(ctx, [1])
     assert attr(rcl, 1, "IncMuni_L") == "Unincorporated" and attr(rcl, 1, "IncMuni_R") == "Unincorporated"
+
+
+def _lookup(name, rows, domain=False):
+    cols = ["Code", "Label", "SortOrder", "Active", "Notes", "IsDefault"] + (["Domain", "Parent"] if domain else [])
+    lyr = _layer(name, cols)
+    lyr._wkb = 100                      # no geometry, like a real lookup table
+    for r in rows:
+        lyr.add_committed([r.get(c, "") for c in cols], None)
+    return lyr
+
+
+def test_lookup_defaults_fill_new_and_existing_addresses(world):
+    from nena_addressing_and_rcl_tools.core import lookups as LK
+    ctx, addr, pcfg, rcl, cfg = world["ctx"], world["addr"], world["pcfg"], world["rcl"], world["cfg"]
+    for name in ("AddressStatus", "AddressType"):
+        if addr.fields().lookupField(name) < 0:
+            addr.addAttribute(QgsField(name, "string"))
+    old = E.commit_address(ctx, E.plan_address(ctx, P(20, 0), P(20, 20)), 121, create_driveway=False)["address"]
+    assert attr(addr, old, "AddressStatus") in (None, "")
+    status = _lookup("AddressStatus", [{"Code": "ACT", "Label": "Active", "SortOrder": 10, "Active": "Y",
+                                        "IsDefault": "Y"},
+                                       {"Code": "PROP", "Label": "Proposed", "SortOrder": 20, "Active": "Y"}])
+    types = _lookup("AddressType", [{"Code": "RES", "Label": "Residence", "SortOrder": 10, "Active": "Y"},
+                                    {"Code": "BUS", "Label": "Business", "SortOrder": 20, "Active": "Y"}])
+    remember(pcfg.lookups, "address_status", status)
+    remember(pcfg.lookups, "address_type", types)
+    save_project_config(pcfg)
+    assert LK.field_defaults(pcfg, "address") == {"AddressStatus": "ACT"}
+    # one default per list: ticking Business clears nothing else, then Residence replaces it
+    LK.set_default(types, 2)
+    LK.set_default(types, 1)
+    assert LK.default_code(LK.read_rows(types)) == "RES"
+    assert [r["Code"] for r in LK.read_rows(types) if LK.is_default(r)] == ["RES"]
+    ctx = E.AddressContext(pcfg, rcl, cfg)
+    new = E.commit_address(ctx, E.plan_address(ctx, P(60, 0), P(60, 20)), 161, create_driveway=False)["address"]
+    assert attr(addr, new, "AddressStatus") == "ACT" and attr(addr, new, "AddressType") == "RES"
+    picked = E.commit_address(ctx, E.plan_address(ctx, P(80, 0), P(80, 20)), 181, create_driveway=False,
+                              address_status="PROP")["address"]
+    assert attr(addr, picked, "AddressStatus") == "PROP"        # what the user picked wins
+    # existing address: only its empty fields are filled
+    addr.changeAttributeValues(old, {addr.fields().lookupField("AddressType"): "BUS"})
+    assert LK.fill_empty_from_lookups(pcfg, "address", addr, [old]) == 1
+    assert attr(addr, old, "AddressStatus") == "ACT" and attr(addr, old, "AddressType") == "BUS"
+    # a retired-only or cleared list gives no default
+    LK.set_default(types, None)
+    assert "AddressType" not in LK.field_defaults(pcfg, "address")
+    assert LK.field_defaults(pcfg, "address", governed=True)["AddressType"] == ""
+
+
+def test_lookup_road_status_default_wins_over_settings(world):
+    from nena_addressing_and_rcl_tools.core import lookups as LK
+    from nena_addressing_and_rcl_tools.core.defaults import configured_defaults
+    pcfg, cfg = world["pcfg"], world["cfg"]
+    assert configured_defaults(cfg)["RoadStatus"] == "ACT"            # settings, no lookup table yet
+    status = _lookup("RoadStatus", [{"Code": "ACT", "Label": "Active", "SortOrder": 10, "Active": "Y"},
+                                    {"Code": "PRIV", "Label": "Private", "SortOrder": 20, "Active": "Y",
+                                     "IsDefault": "Y"}])
+    remember(pcfg.lookups, "road_status", status)
+    save_project_config(pcfg)
+    assert configured_defaults(cfg)["RoadStatus"] == "PRIV"
+    LK.set_default(status, None)
+    assert "RoadStatus" not in configured_defaults(cfg)               # unticked list: no default at all
+
+
+def test_older_lookup_table_gets_the_default_column(world):
+    from nena_addressing_and_rcl_tools.core import lookups as LK
+    pcfg = world["pcfg"]
+    cols = ["Code", "Label", "SortOrder", "Active"]
+    old = _layer("RoadStatus", cols)
+    old._wkb = 100
+    for row in (["ACT", "Active", 10, "Y"], ["PROP", "Proposed", 20, "Y"]):
+        old.add_committed(row, None)
+    remember(pcfg.lookups, "road_status", old)
+    save_project_config(pcfg)
+    assert "road_status" not in LK.list_defaults(pcfg)                # no column: settings still decide
+    assert LK.ensure_default_column(old, "road_status", {"road_status": "PROP"})
+    assert LK.list_defaults(pcfg)["road_status"] == "PROP"
+    assert not LK.ensure_default_column(old, "road_status")           # only once
+
+
+def test_address_checks_report_empty_required_fields(world):
+    from nena_addressing_and_rcl_tools.core.addressing.checks import empty_required_fields
+    ctx, addr = world["ctx"], world["addr"]
+    addr.addAttribute(QgsField("AddressStatus", "string"))
+    ctx = E.AddressContext(world["pcfg"], world["rcl"], world["cfg"])
+    aid = E.commit_address(ctx, E.plan_address(ctx, P(20, 0), P(20, 20)), 121, create_driveway=False)["address"]
+    feat = addr._feats[aid]
+    assert "AddressStatus" in empty_required_fields(ctx.addr_acc, feat)
+    assert ("ADDR_EMPTY_FIELDS", aid) in {(i.code, i.fid) for i in address_issues(ctx)}

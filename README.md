@@ -191,11 +191,11 @@ Values that rarely change. They are written **only into empty fields**; a value 
 | **Valid** (left/right) | `Y` |
 | **One-way** | `B` (two-way). Mark one-way roads with **One-way ▾** |
 | **Parity left / right** | **Leave blank.** Ranging writes the parity. A default here would be kept as the road's own parity (see step 9) |
-| **Road status** | `ACT` (Active) — **filled in for you**. The road-status code; see Lookup tables → Road statuses |
-| **Road class** | `Local` — **filled in for you** |
+| **Road status** | `ACT` (Active) — **filled in for you**. With lookup tables this box is greyed out: tick **Default** on a road status in Lookup tables instead |
+| **Road class** | `Local` — **filled in for you**. With lookup tables, set it with **Default** in Lookup tables |
 | **Discrepancy agency** | Your agency identifier (the same as step 3) |
 
-New roads are **Active** with road class **Local** unless you change these two boxes; clear a box to stop filling that field. (Your layer needs the RoadStatus and RoadClass fields: **Settings → Fields → Add all fields**.)
+New roads are **Active** with road class **Local** unless you change these two boxes; clear a box to stop filling that field. Once you have lookup tables, road status, road class and discrepancy agency follow the value ticked **Default** there (step 6), so there is one place to set them. (Your layer needs the RoadStatus and RoadClass fields: **Settings → Fields → Add all fields**.)
 
 **Add a field** adds any other field you want filled. **Fill empty fields** writes the defaults onto the existing roads now; new roads get them as you add them.
 
@@ -218,6 +218,7 @@ New addresses copy the values from their side of the road, so do this before pla
 2. **Load values from my data**, and untick typos before they're added.
 3. **Reconnect drop-downs** after you add new layers or fields.
 4. Add local values: your communities, ZIP codes, ESNs, road classes. For postal communities, set each one's **Parent** to its ZIP so the list narrows by ZIP.
+5. **Tick Default** on the value new features should get in **Address statuses**, **Address types**, **Road statuses**, **Road classes**, **Placement methods** and **Discrepancy agencies**. Then click **Fill empty fields** to give it to the address points and roads you already have.
 
 See [Drop-down lists](#drop-down-lists-lookup-tables) for details.
 
@@ -342,6 +343,7 @@ Every button has its name under the icon.
 | Button | What it does |
 |---|---|
 | **NENA ▾** | Opens a window (Streets, Addresses, Ranges, Check, Lookup tables, Schema and import, Settings), or **Style NENA layers** |
+| **Master Streets** | Opens the master street names window in one click |
 | **Split** | Click a road to split it and divide its range between the two pieces |
 | **Auto re-range** | Turns automatic re-ranging on or off after you split or merge roads |
 | **Range** | Gives the selected roads an address range |
@@ -495,6 +497,23 @@ Click a list at the top, then edit its values below. **Every change saves right 
 | Stop offering a value | Untick **In list**. It stays in the table but drops out of the drop-down |
 | Reorder | Drag rows, or use **Move up**, **Move down**, or **Sort A–Z** |
 | Remove a mistake | Select it and click **Delete** |
+| Choose the default | Tick **Default** on one value. Ticking another moves it; untick to have no default |
+| Fill existing features | Click **Fill empty fields** (selected features only, when some are selected) |
+
+#### Default values
+
+Address statuses, address types, road statuses, road classes, placement methods and discrepancy agencies each have a **Default** column. **One value per list** can be the default.
+
+- **New features get it when the field is empty**: Place address, Place units, Draw road, and also QGIS's own Add Feature tool, pasting and imports, because the plugin sets it as the field's default value in QGIS. A default someone set on a field by hand in Layer Properties is left alone.
+- **The Place address window starts on it.** Status, type and placement are listed there, already set to the default; change them for this address if needed.
+- **Nothing is overwritten.** What you pick wins, then the value from the side of the road, then the default.
+- **Retired values can't be the default.** Unticking **In list** on the default clears it.
+- **Existing features:** **Fill empty fields** (here, or on the Addresses window) writes the default into empty fields only.
+- **Check** lists address points with empty mandatory fields or no status, type or placement (`ADDR_EMPTY_FIELDS`).
+
+Lists that come from where the feature is (ESN, ZIP code, MSAG community, municipality, county, postal community) have **no** default on purpose: a default there would hide a missing boundary polygon and give an address the wrong ESN. Those come from **Settings → Sides**.
+
+New tables start with **Active** for address and road status, **Local** for road class and **Structure** for placement. Tables made before 3.6.15 get the Default column the next time the drop-downs are connected, ticked with the values your settings used.
 
 > ⚠️ Features store the **code**. If you change a code, features that already use the old code are not updated.
 
@@ -877,6 +896,7 @@ To see one feature's history, filter the history table by its ID and sort by ver
 
 ## What's new
 
+- **3.6.15** — **Default values in the lookup tables.** Tick **Default** on one value per list (address status, address type, road status, road class, placement, discrepancy agency) and new address points and roads get it when the field is empty, from the plugin's tools and from QGIS's own Add Feature tool. The Place address window now has **Status** and **Type**, starting on the defaults. **Fill empty fields** fills existing features, and **Check** reports address points with empty required fields. Road status and road class on Settings → Defaults follow the lookup tables when you have them. New **Master Streets** button next to **NENA ▾**.
 - **3.6.14** — City limits on **Settings → Sides** fill IncMuni on each side of the road, with `Unincorporated` (or your own value) outside them, and an optional unincorporated community layer fills UnincCom only outside the city. Each side is checked out to a set distance, so limits drawn on the right-of-way line still put the city on the right side of the road.
 - **3.6.11** — The version (history) tables and lookup tables are hidden from the Layers panel when the plugin creates them. They stay loaded and keep working. Show or hide them with **NENA ▾ → Hide version and lookup tables**.
 - **3.6.10** — The **Centerline** picker leaves out version (history) tables, driveways, and the address, access-point, and street-name layers, and opens on the project's centerline, so streets can't be assigned or drawn into a version table by mistake. Splitting a road (QGIS split, the Split tool, or a new road meeting it) no longer gives the pieces ranges that are a little too high: with distance addressing the split falls where the house numbers are (From + distance ÷ spacing, the same spacing as Address rules), and the address points from the Addresses window anchor the split when none are set on Ranges → Method.

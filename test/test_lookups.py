@@ -207,3 +207,50 @@ def test_prefix_comes_from_the_address_table_name():
     assert prefix_from_table("Wayne_SiteStructureAddressPoint") == "Wayne"
     assert prefix_from_table("SiteStructureAddressPoint") == ""
     assert prefix_from_table("addresses") == ""
+
+
+# ---------------------------------------------------------------------------
+# Default values (one per list)
+# ---------------------------------------------------------------------------
+from nena_addressing_and_rcl_tools.core.lookups import (  # noqa: E402
+    DOMAINS_KEY as _DK, can_default, default_code, defaults_to_tick, migration_defaults, seeds_for as _seeds)
+
+
+def test_only_descriptive_lists_can_have_a_default():
+    for name in ("address_status", "address_type", "road_status", "RoadClass", "Placement", "DiscrpAgID"):
+        assert can_default(name)
+    # where-the-feature-is lists never get one: a default would hide a missing boundary polygon
+    for name in ("ESN", "PostCode", "MSAGComm", "IncMuni", "County", "PostComm", "unit_type", "road_type"):
+        assert not can_default(name)
+
+
+def test_new_tables_start_with_the_usual_defaults():
+    assert default_code(_seeds("address_status")) == "ACT"
+    assert default_code(_seeds("road_status")) == "ACT"
+    assert default_code(_seeds("address_type")) == ""
+    domains = _seeds(_DK)
+    assert default_code([r for r in domains if r["Domain"] == "RoadClass"]) == "Local"
+    assert default_code([r for r in domains if r["Domain"] == "Placement"]) == "Structure"
+    assert not [r for r in _seeds("unit_type") if r["IsDefault"]]
+
+
+def test_default_code_skips_retired_values_and_picks_one():
+    rows = [{"Code": "A", "SortOrder": 20, "IsDefault": "Y", "Active": "Y"},
+            {"Code": "B", "SortOrder": 10, "IsDefault": "Y", "Active": "Y"},
+            {"Code": "C", "SortOrder": 5, "IsDefault": "Y", "Active": "N"}]
+    assert default_code(rows) == "B"
+    assert default_code([{"Code": "C", "IsDefault": "Y", "Active": "N"}]) == ""
+    assert default_code([{"Code": "A", "IsDefault": ""}]) == ""
+
+
+def test_older_settings_become_the_ticked_defaults():
+    class _Cfg:
+        defaults = {"RoadStatus": "PRIV", "RoadClass": "Secondary"}
+    wanted = migration_defaults(ProjectConfig(), _Cfg())
+    assert wanted["road_status"] == "PRIV" and wanted["RoadClass"] == "Secondary"
+    assert wanted["address_status"] == "ACT" and wanted["Placement"] == ProjectConfig().addresses.placement
+    rows = [{"_fid": 1, "Domain": "RoadClass", "Code": "Local", "Active": "Y"},
+            {"_fid": 2, "Domain": "RoadClass", "Code": "secondary", "Active": "Y"},
+            {"_fid": 3, "Domain": "Placement", "Code": "Structure", "Active": "Y"},
+            {"_fid": 4, "Domain": "ESN", "Code": "Structure", "Active": "Y"}]
+    assert sorted(defaults_to_tick(rows, wanted, _DK)) == [2, 3]

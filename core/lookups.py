@@ -35,6 +35,7 @@ LOOKUP_FIELDS = [
     FieldDef("SortOrder", OPT, INT, 0, "Order in the drop-down"),
     FieldDef("Active", OPT, S, 1, "Y while the value can be chosen, N when it is retired"),
     FieldDef("Notes", OPT, S, 254, "Notes"),
+    FieldDef("IsDefault", OPT, S, 1, "Y on the one value a new feature gets when the field is empty"),
 ]
 
 DOMAIN_EXTRA_FIELDS = [
@@ -43,6 +44,16 @@ DOMAIN_EXTRA_FIELDS = [
 ]
 
 DOMAINS_KEY = "domains"
+
+# Lists that may have a default value (Lookup tables, Default column). Lists
+# that come from where the feature is (ESN, ZIP, MSAG community, municipality,
+# county …) are left out on purpose: a default there would hide a missing
+# boundary polygon and give the address the wrong value.
+DEFAULTABLE_TABLES = ("address_status", "address_type", "road_status")
+DEFAULTABLE_DOMAINS = ("RoadClass", "Placement", "DiscrpAgID")
+
+# Default rows ticked in new tables, and in older tables the first time they get the Default column.
+SEED_DEFAULTS = {"address_status": "ACT", "road_status": "ACT", "RoadClass": "Local", "Placement": "Structure"}
 
 # key, table, title, project-config role
 TABLE_SPECS = (
@@ -264,7 +275,7 @@ def _rows(pairs: Sequence[Tuple[str, str]], domain: str = "") -> List[dict]:
         if not key or not text or key.upper() in seen:
             continue
         seen.add(key.upper())
-        row = {"Code": key, "Label": text, "SortOrder": order, "Active": "Y", "Notes": ""}
+        row = {"Code": key, "Label": text, "SortOrder": order, "Active": "Y", "Notes": "", "IsDefault": ""}
         if domain:
             row["Domain"] = domain
             row["Parent"] = ""
@@ -298,13 +309,19 @@ def domain_seeds() -> List[dict]:
 
 def seeds_for(key: str) -> List[dict]:
     if key == "road_type":
-        return road_type_seeds()
-    if key == DOMAINS_KEY:
-        return domain_seeds()
-    pairs = _PLAIN.get(key)
-    if pairs is None:
-        raise KeyError(key)
-    return _rows(pairs)
+        rows = road_type_seeds()
+    elif key == DOMAINS_KEY:
+        rows = domain_seeds()
+    else:
+        pairs = _PLAIN.get(key)
+        if pairs is None:
+            raise KeyError(key)
+        rows = _rows(pairs)
+    for row in rows:
+        list_name = row.get("Domain") or key
+        if can_default(list_name) and SEED_DEFAULTS.get(list_name, "").upper() == str(row["Code"]).upper():
+            row["IsDefault"] = "Y"
+    return rows
 
 
 def builtin_unit_types() -> List[Tuple[str, str]]:
@@ -333,6 +350,282 @@ def active_choices(rows: Sequence[dict]) -> List[Tuple[str, str]]:
     return [(code, label) for _order_, code, label in kept]
 
 
+# ---------------------------------------------------------------------------
+# Default values
+# ---------------------------------------------------------------------------
+def can_default(list_name: str) -> bool:
+    """True for a lookup key or domain name whose list may have a default (status, type, road class …)."""
+    return list_name in DEFAULTABLE_TABLES or list_name in DEFAULTABLE_DOMAINS
+
+
+def is_default(row: dict) -> bool:
+    return str(row.get("IsDefault") or "").strip().upper() in ("Y", "YES", "TRUE", "T", "1")
+
+
+def is_active(row: dict) -> bool:
+    return str(row.get("Active") or "Y").strip().upper() != "N"
+
+
+def default_code(rows: Sequence[dict]) -> str:
+    """Code of the default value: the ticked active row (the first in sort order if several are ticked)."""
+    ticked = [row for row in rows if is_default(row) and is_active(row) and str(row.get("Code") or "").strip()]
+    if not ticked:
+        return ""
+    ticked.sort(key=lambda row: (_order(row), str(row.get("Label") or "").upper()))
+    return str(ticked[0]["Code"]).strip()
+
+
+def has_default_column(layer) -> bool:
+    return layer is not None and layer.fields().indexFromName("IsDefault") >= 0
+
+
+def list_defaults(pcfg) -> Dict[str, str]:
+    """
+    ``{list name: default code}`` for every list that may have a default and
+    whose table has the Default column. ``""`` means the list has no default
+    (nothing ticked). Lists without a table or column are left out, so the
+    older settings still apply to them.
+    """
+    out = {}
+    for key in DEFAULTABLE_TABLES:
+        layer = lookup_layer(pcfg, key)
+        if has_default_column(layer):
+            out[key] = default_code(read_rows(layer))
+    domains = lookup_layer(pcfg, DOMAINS_KEY)
+    if has_default_column(domains):
+        rows = read_rows(domains)
+        for name in DEFAULTABLE_DOMAINS:
+            out[name] = default_code(rows_in_domain(rows, name))
+    return out
+
+
+def field_defaults(pcfg, role: str, governed: bool = False) -> Dict[str, str]:
+    """
+    ``{NENA field: default code}`` for the fields of ``role`` (address,
+    centerline) whose list has a default. With ``governed`` the fields whose
+    list has the Default column but nothing ticked are included with ``""``.
+    """
+    defaults = list_defaults(pcfg)
+    out = {}
+    for binding in BINDINGS:
+        if binding.role != role or binding.kind not in ("table", "domain") or binding.key_column != "Code":
+            continue
+        if binding.source not in defaults:
+            continue
+        code = defaults[binding.source]
+        if code or governed:
+            out[binding.field] = code
+    return out
+
+
+def default_choice(pcfg, key: str, fallback: str = "") -> str:
+    """The default code of one list (lookup key or domain name), else ``fallback``."""
+    return list_defaults(pcfg).get(key) or fallback
+
+
+def default_placement(pcfg) -> str:
+    """Placement for new addresses: the Placement default in the lookup tables, else Settings, Addresses."""
+    return default_choice(pcfg, "Placement", getattr(pcfg.addresses, "placement", "") or "Structure")
+
+
+def choices_for(pcfg, key: str) -> List[Tuple[str, str]]:
+    """Active (code, label) pairs of a lookup table or domain list, for a drop-down in a plugin window."""
+    if key in SPEC_BY_KEY:
+        rows = read_rows(lookup_layer(pcfg, key))
+    else:
+        rows = read_rows(lookup_layer(pcfg, DOMAINS_KEY), key)
+    return active_choices(rows)
+
+
+def migration_defaults(pcfg, centerline_cfg=None) -> Dict[str, str]:
+    """
+    Defaults to tick when a table first gets the Default column: what the
+    older settings used (road status and class from Settings, Defaults;
+    placement from Settings, Addresses), else the standard ones.
+    """
+    out = dict(SEED_DEFAULTS)
+    old = dict(getattr(centerline_cfg, "defaults", None) or {})
+    if old.get("RoadStatus"):
+        out["road_status"] = str(old["RoadStatus"]).strip()
+    if old.get("RoadClass"):
+        out["RoadClass"] = str(old["RoadClass"]).strip()
+    placement = getattr(getattr(pcfg, "addresses", None), "placement", "")
+    if placement:
+        out["Placement"] = placement
+    return out
+
+
+def defaults_to_tick(rows: Sequence[dict], wanted: Dict[str, str], key: str) -> List:
+    """Feature ids to mark Y when a table gets the Default column (codes compared without case)."""
+    out = []
+    names = DEFAULTABLE_DOMAINS if key == DOMAINS_KEY else ((key,) if key in DEFAULTABLE_TABLES else ())
+    for name in names:
+        code = str(wanted.get(name) or "").strip().upper()
+        if not code:
+            continue
+        pool = rows_in_domain(rows, name) if key == DOMAINS_KEY else rows
+        for row in sorted(pool, key=_order):
+            if str(row.get("Code") or "").strip().upper() == code and is_active(row):
+                out.append(row["_fid"])
+                break
+    return out
+
+
+def ensure_default_column(layer, key: str, wanted: Optional[Dict[str, str]] = None) -> bool:
+    """
+    Add the Default column (IsDefault) to an older lookup table and tick the
+    defaults the project used so far. Returns True when the column was added.
+    """
+    if layer is None or has_default_column(layer):
+        return False
+    if key != DOMAINS_KEY and key not in DEFAULTABLE_TABLES:
+        return False
+    from .layer_access import ConfigError, ensure_editable
+    try:
+        from ..compat import make_field
+        field = make_field("IsDefault", "string", 1)
+    except Exception:  # noqa: BLE001 - test double without Qgis version info
+        from qgis.core import QgsField
+        field = QgsField("IsDefault", "string")
+    if layer.isEditable():
+        if not layer.addAttribute(field):
+            return False
+    elif not layer.dataProvider().addAttributes([field]):
+        raise ConfigError(f"Could not add the Default column to {layer.name()}.")
+    layer.updateFields()
+    fids = defaults_to_tick(read_rows(layer), wanted or SEED_DEFAULTS, key)
+    if fids:
+        started = ensure_editable(layer)
+        index = layer.fields().indexFromName("IsDefault")
+        layer.beginEditCommand("NENA: tick lookup defaults")
+        for fid in fids:
+            layer.changeAttributeValue(fid, index, "Y")
+        layer.endEditCommand()
+        save_edits(layer, started)
+    return True
+
+
+def set_default(layer, fid, domain: str = "") -> int:
+    """
+    Make one row the default of its list (``fid`` None clears the list's default).
+    Only one row per list keeps Y. Changes go into the layer's edit buffer;
+    the caller opens and saves the edit session. Returns rows changed.
+    """
+    index = layer.fields().indexFromName("IsDefault")
+    if index < 0:
+        return 0
+    changed = 0
+    for row in read_rows(layer, domain):
+        if fid is not None and row["_fid"] == fid:
+            if str(row.get("IsDefault") or "") != "Y":
+                layer.changeAttributeValue(row["_fid"], index, "Y")
+                changed += 1
+        elif str(row.get("IsDefault") or "").strip():
+            layer.changeAttributeValue(row["_fid"], index, None)
+            changed += 1
+    return changed
+
+
+def _default_expression(code: str) -> str:
+    return _quote(code)
+
+
+_LAYER_DEFAULTS_PROP = "nena/lookup_defaults"
+
+
+def apply_layer_defaults(pcfg, centerline=None) -> int:
+    """
+    Put each list's default on the fields that use it, as the field's QGIS
+    default value, so every new feature gets it: the plugin's tools, QGIS's
+    own Add Feature tool, pasting, and imports. A default someone set on a
+    field by hand is left alone. Returns the number of fields changed.
+    """
+    import json
+    try:
+        from qgis.core import QgsDefaultValue
+    except ImportError:  # pragma: no cover
+        return 0
+    layers = feature_layers(pcfg, centerline)
+    maps = field_maps(pcfg, layers)
+    changed = 0
+    for role in ("address", "centerline"):
+        layer = layers.get(role)
+        if layer is None or not hasattr(layer, "setDefaultValueDefinition"):
+            continue
+        try:
+            ours = json.loads(layer.customProperty(_LAYER_DEFAULTS_PROP, "") or "{}")
+        except (TypeError, ValueError):
+            ours = {}
+        for field, code in field_defaults(pcfg, role, governed=True).items():
+            physical = maps.get(role, {}).get(field)
+            index = layer.fields().indexFromName(physical) if physical else -1
+            if index < 0:
+                continue
+            current = layer.defaultValueDefinition(index).expression() or ""
+            if current and current != ours.get(physical):
+                continue                       # set by hand: keep it
+            wanted = _default_expression(code) if code else ""
+            if wanted == current:
+                continue
+            layer.setDefaultValueDefinition(index, QgsDefaultValue(wanted, False))
+            if wanted:
+                ours[physical] = wanted
+            else:
+                ours.pop(physical, None)
+            changed += 1
+        layer.setCustomProperty(_LAYER_DEFAULTS_PROP, json.dumps(ours))
+    return changed
+
+
+def sync_defaults(pcfg, centerline=None) -> int:
+    """Give older lookup tables the Default column, then put the defaults on the fields."""
+    from .layer_access import ConfigError
+    cfg = None
+    if centerline is not None:
+        with contextlib.suppress(Exception):
+            from .config import load_from_layer
+            cfg = load_from_layer(centerline)
+    wanted = migration_defaults(pcfg, cfg)
+    for key in DEFAULTABLE_TABLES + (DOMAINS_KEY,):
+        with contextlib.suppress(ConfigError):
+            ensure_default_column(lookup_layer(pcfg, key), key, wanted)
+    return apply_layer_defaults(pcfg, centerline)
+
+
+def fill_empty_from_lookups(pcfg, role: str, layer, fids=None) -> int:
+    """Write each list's default into the empty fields of existing features. One undo step."""
+    from qgis.core import QgsFeatureRequest
+    from .layer_access import ensure_editable
+    if layer is None:
+        return 0
+    maps = field_maps(pcfg, {role: layer})
+    targets = {}
+    for field, code in field_defaults(pcfg, role).items():
+        physical = maps.get(role, {}).get(field)
+        index = layer.fields().indexFromName(physical) if physical else -1
+        if index >= 0 and code:
+            targets[index] = code
+    if not targets:
+        return 0
+    request = QgsFeatureRequest() if not fids else QgsFeatureRequest().setFilterFids(list(fids))
+    changes = {}
+    for feature in layer.getFeatures(request):
+        vals = {i: code for i, code in targets.items() if not _text(feature.attribute(i))}
+        if vals:
+            changes[feature.id()] = vals
+    if not changes:
+        return 0
+    started = ensure_editable(layer)
+    layer.beginEditCommand("NENA: fill empty fields from lookup defaults")
+    for fid, vals in changes.items():
+        for index, code in vals.items():
+            layer.changeAttributeValue(fid, index, code)
+    layer.endEditCommand()
+    if started:
+        save_edits(layer, started)
+    return len(changes)
+
+
 def rows_in_domain(rows: Iterable[dict], domain: str) -> List[dict]:
     want = domain.upper()
     return [row for row in rows if str(row.get("Domain") or "").strip().upper() == want]
@@ -357,7 +650,7 @@ def new_domain_rows(domain: str, values: Iterable, existing: Iterable[dict]) -> 
         have.add(text.upper())
         order += 10
         out.append({"Domain": domain, "Code": text, "Label": text, "SortOrder": order, "Active": "Y",
-                    "Parent": "" if parent is None else str(parent).strip(), "Notes": ""})
+                    "Parent": "" if parent is None else str(parent).strip(), "Notes": "", "IsDefault": ""})
     return out
 
 
@@ -557,21 +850,20 @@ def unit_type_choices(pcfg) -> List[Tuple[str, str]]:
     return choices or builtin_unit_types()
 
 
-_ROW_FIELDS = ("Code", "Label", "SortOrder", "Active", "Notes", "Domain", "Parent")
+_ROW_FIELDS = ("Code", "Label", "SortOrder", "Active", "Notes", "Domain", "Parent", "IsDefault")
 
 
 def read_rows(layer, domain: str = "") -> List[dict]:
     """Lookup rows currently on the layer, including unsaved edits. ``domain`` keeps one list."""
     if layer is None:
         return []
-    names = {field.name() for field in layer.fields()}
+    present = {name: layer.fields().indexFromName(name) for name in _ROW_FIELDS}
+    present = {name: index for name, index in present.items() if index >= 0}
     rows = []
     for feature in layer.getFeatures():
         row = {}
-        for name in _ROW_FIELDS:
-            if name not in names:
-                continue
-            value = feature[name]
+        for name, index in present.items():
+            value = feature.attribute(index)
             with contextlib.suppress(Exception):
                 from ..compat import is_null
                 if is_null(value):
@@ -714,6 +1006,9 @@ def apply_dropdowns(pcfg, centerline=None, force: bool = False, dry_run: bool = 
             continue
         layer.setEditorWidgetSetup(index, QgsEditorWidgetSetup(wanted, config))
         entry["status"] = "wired"
+    if not dry_run:
+        with contextlib.suppress(Exception):
+            sync_defaults(pcfg, centerline)
     return report
 
 

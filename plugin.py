@@ -145,6 +145,7 @@ class NenaRclPlugin:
         self.act_archive = self._add_menu_action("", "Create version tables…",
                                                  lambda *_: self._dock().create_archive_schema(), "setup")
         self._add_windows_button(before=self._windows_button_slot)
+        self._add_master_streets_button(before=self._windows_button_slot)
         self._build_menu()
 
         self.split_tool = SplitRerangeTool(self.iface.mapCanvas(), self._split_target, self._notify)
@@ -279,6 +280,21 @@ class NenaRclPlugin:
             self._windows_button_action = self.toolbar.insertWidget(before, button)
         else:
             self._windows_button_action = self.toolbar.addWidget(button)
+
+    def _add_master_streets_button(self, before=None):
+        """Master street names, one click away next to the NENA drop-down (also in that drop-down)."""
+        act = QAction(icon("streets.svg"), "Master Streets", self.iface.mainWindow())
+        act.setObjectName("mActionNenaMasterStreets")
+        act.setIconText("Master Streets")
+        act.setToolTip("Open the master street names: add, rename, and assign streets, and draw a road "
+                       "for a street")
+        act.triggered.connect(lambda *_: self.show_tab("streets"))
+        if before is not None:
+            self.toolbar.insertAction(before, act)
+        else:
+            self.toolbar.addAction(act)
+        self.act_master_streets = act
+        self.actions.append(act)
 
     def _add_one_way_button(self):
         """A labelled drop-down: mark selected centerlines two-way, FT, or TF (for routing)."""

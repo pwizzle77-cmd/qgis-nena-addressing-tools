@@ -218,7 +218,9 @@ class MappingTab(QWidget):
             status.setToolTip("The road-status code new roads get (ACT = Active, PROP = Proposed, "
                               "PRIV = Private…; see Lookup tables, Road statuses)")
         dv.addWidget(hint("New roads get road status <b>ACT</b> (Active) and road class <b>Local</b> unless you "
-                          "change them here. Clear a box to stop filling that field."))
+                          "change them here. Clear a box to stop filling that field. With lookup tables, road "
+                          "status, road class and agency follow the value ticked <b>Default</b> in "
+                          "<b>Lookup tables</b> and are greyed out here."))
         self.tbl_defaults = BoundedTable(0, 2, min_height=70, max_height=140)
         self.tbl_defaults.setHorizontalHeaderLabels(["Field", "Default"])
         self.tbl_defaults.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
@@ -308,17 +310,36 @@ class MappingTab(QWidget):
         for r in rows:
             self.tbl_defaults.removeRow(r)
 
+    @staticmethod
+    def _lookup_governed():
+        """{field: default} for centerline fields whose default is ticked in Lookup tables."""
+        from ..core.defaults import lookup_defaults
+        return lookup_defaults("centerline")
+
     def _load_defaults(self, cfg):
         values = dict(cfg.defaults or {})
+        governed = self._lookup_governed()
+        self._governed = set(governed)
         for name, widget in self._def_widgets.items():
-            self._set_widget(widget, values.pop(name, ""))
+            value = values.pop(name, "")
+            if name in governed:
+                value = governed[name]
+            self._set_widget(widget, value)
+            widget.setEnabled(name not in governed)
+            if name in governed:
+                widget.setToolTip("Set by the value ticked Default in Lookup tables")
+        for name in governed:
+            values.pop(name, None)
         self.tbl_defaults.setRowCount(0)
         for name, val in values.items():
             self._add_extra(name, val)
 
     def _store_defaults(self, cfg):
         out = {}
+        governed = getattr(self, "_governed", set())
         for name, widget in self._def_widgets.items():
+            if name in governed:
+                continue              # Lookup tables decide; nothing to keep here
             val = self._widget_value(widget)
             if val:
                 out[name] = val
@@ -328,7 +349,7 @@ class MappingTab(QWidget):
             edit = self.tbl_defaults.cellWidget(r, 1)
             name = box.currentData() if box is not None else ""
             val = edit.text().strip() if edit is not None else ""
-            if name and val and name not in fixed:
+            if name and val and name not in fixed and name not in governed:
                 out[name] = val
         cfg.defaults = out
 
