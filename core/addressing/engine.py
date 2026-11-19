@@ -1255,7 +1255,7 @@ def shared_driveway_at(ctx: AddressContext, pt: QgsPointXY, tol: float):
 def readdress(ctx: AddressContext, address_fids: Sequence[Hashable]) -> List[Tuple[Hashable, str, AddressPlan]]:
     """Recalculate numbers for existing addresses (e.g. after part of a road was renamed). Nothing written."""
     out = []
-    for f in ctx.addr.getFeatures(QgsFeatureRequest().setFilterFids(list(address_fids))):
+    for f in list(ctx.addr.getFeatures(QgsFeatureRequest().setFilterFids(list(address_fids)))):
         if not f.hasGeometry():
             continue
         roof = ctx.from_addr.transform(_pt(f.geometry()))
@@ -1301,7 +1301,7 @@ def attribute_addresses(ctx: AddressContext, fids: Optional[Sequence[Hashable]] 
     changes, notes = {}, []
     measures = {}
     req = QgsFeatureRequest() if fids is None else QgsFeatureRequest().setFilterFids(list(fids))
-    for f in ctx.addr.getFeatures(req):
+    for f in list(ctx.addr.getFeatures(req)):
         if not f.hasGeometry():
             continue
         roof = ctx.from_addr.transform(_pt(f.geometry()))
@@ -1351,7 +1351,7 @@ def attribute_centerline_sides(ctx: AddressContext, fids: Optional[Sequence[Hash
     off = gu.metres_to_layer_units(offset_m, ctx.rcl.crs())
     changes, crossings = {}, []
     req = QgsFeatureRequest() if fids is None else QgsFeatureRequest().setFilterFids(list(fids))
-    for f in ctx.rcl.getFeatures(req):
+    for f in list(ctx.rcl.getFeatures(req)):
         g = gu.linear_geometry(f.geometry())
         if g.isNull() or g.isEmpty():
             continue
@@ -1388,7 +1388,7 @@ def addresses_on_segments(ctx: AddressContext, seg_fids: Sequence[Hashable]) -> 
             nguids[str(n)] = f.id()
     out = []
     measures = {}
-    for f in ctx.addr.getFeatures():
+    for f in list(ctx.addr.getFeatures()):
         n = ctx.addr_acc.get(f, "RCL_NGUID") if ctx.addr_acc.has("RCL_NGUID") else None
         if n and str(n) in nguids:
             out.append(f.id())

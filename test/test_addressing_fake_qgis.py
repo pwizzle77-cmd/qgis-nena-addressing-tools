@@ -703,3 +703,11 @@ def test_address_checks_report_empty_required_fields(world):
     feat = addr._feats[aid]
     assert "AddressStatus" in empty_required_fields(ctx.addr_acc, feat)
     assert ("ADDR_EMPTY_FIELDS", aid) in {(i.code, i.fid) for i in address_issues(ctx)}
+
+
+def test_empty_fields_message_says_which_have_a_default():
+    from nena_addressing_and_rcl_tools.core.addressing.checks import empty_fields_message
+    msg = empty_fields_message(["AddressStatus", "AddressType"], {"AddressStatus"})
+    assert msg == ("Empty: AddressStatus (Fill empty fields gives them the lookup defaults); "
+                   "AddressType (no default: tick one in Lookup tables, or enter the values)")
+    assert "no default" not in empty_fields_message(["AddressStatus"], {"AddressStatus"})

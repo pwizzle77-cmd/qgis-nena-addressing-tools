@@ -896,6 +896,14 @@ To see one feature's history, filter the history table by its ID and sort by ver
 
 ## What's new
 
+- **3.6.16** — **Tested end to end in QGIS 4** on a county's GeoComm data (8,429 roads, 36,928 addresses), in a File Geodatabase and in SQL Server. Fixes from that run:
+  - The lookup and version tables no longer disappear after **Create schema**. QGIS 4 deleted a hidden table; the plugin now hides them without removing them.
+  - The panel, and the Centerline pickers on the Check and other windows, keep the centerline layer after a schema is created.
+  - **Check** on address points: 874 s → about 10 s. Placing or planning a house number reads only the addresses and roads of that street.
+  - **SQL Server:** checks, attribution and re-addressing no longer find nothing (every address was reported as "no centerline carries the street"). SQL Server cannot run a second query while the first is still being read.
+  - **Import** leaves Longitude/Latitude empty when the source has 0, 0, and says how many.
+  - **Check** says which empty fields **Fill empty fields** can fix and which need a default ticked first.
+  - Import maps LONG/LAT/ELEV-style coordinate columns.
 - **3.6.15** — **Default values in the lookup tables.** Tick **Default** on one value per list (address status, address type, road status, road class, placement, discrepancy agency) and new address points and roads get it when the field is empty, from the plugin's tools and from QGIS's own Add Feature tool. The Place address window now has **Status** and **Type**, starting on the defaults. **Fill empty fields** fills existing features, and **Check** reports address points with empty required fields. Road status and road class on Settings → Defaults follow the lookup tables when you have them. New **Master Streets** button next to **NENA ▾**.
 - **3.6.14** — City limits on **Settings → Sides** fill IncMuni on each side of the road, with `Unincorporated` (or your own value) outside them, and an optional unincorporated community layer fills UnincCom only outside the city. Each side is checked out to a set distance, so limits drawn on the right-of-way line still put the city on the right side of the road.
 - **3.6.11** — The version (history) tables and lookup tables are hidden from the Layers panel when the plugin creates them. They stay loaded and keep working. Show or hide them with **NENA ▾ → Hide version and lookup tables**.

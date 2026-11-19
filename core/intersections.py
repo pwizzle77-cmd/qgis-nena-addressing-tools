@@ -61,7 +61,7 @@ def find_splits(layer: QgsVectorLayer, new_fids: Sequence[Hashable], tol: float,
     new_set = set(new_fids)
     existing: Dict[Hashable, List[float]] = defaultdict(list)
     new: Dict[Hashable, List[float]] = defaultdict(list)
-    for nf in layer.getFeatures(QgsFeatureRequest().setFilterFids(list(new_set))):
+    for nf in list(layer.getFeatures(QgsFeatureRequest().setFilterFids(list(new_set)))):
         try:
             ng = gu.single_curve_geometry(nf.geometry())
         except gu.SplitError:
@@ -157,7 +157,7 @@ def find_interior_splits(layer: QgsVectorLayer, fids: Optional[Sequence[Hashable
     """
     scope = set(fids) if fids else None
     cuts: Dict[Hashable, List[float]] = defaultdict(list)
-    for host in layer.getFeatures():
+    for host in list(layer.getFeatures()):
         if scope is not None and host.id() not in scope:
             continue
         try:
