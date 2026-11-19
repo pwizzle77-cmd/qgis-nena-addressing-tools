@@ -38,6 +38,7 @@ def address_issues(ctx: AddressContext, check_attribution: bool = True) -> List[
     acc = ctx.addr_acc
     out: List[Issue] = []
     measures: Dict[str, StreetMeasure] = {}
+    segments: Dict = {}                      # centerline features already read, by id
     seen = defaultdict(list)
     per_side = defaultdict(list)            # (street, side) -> [(distance, number, fid)]
     access_tol = ctx.tol * 4
@@ -85,7 +86,9 @@ def address_issues(ctx: AddressContext, check_attribution: bool = True) -> List[
         if not side:
             continue
         per_side[(street, side)].append((dist, num, f.id()))
-        seg = next(ctx.rcl.getFeatures(QgsFeatureRequest().setFilterFid(seg_fid)), None)
+        if seg_fid not in segments:
+            segments[seg_fid] = next(ctx.rcl.getFeatures(QgsFeatureRequest().setFilterFid(seg_fid)), None)
+        seg = segments[seg_fid]
         if seg is None:
             continue
         names = SIDE_FIELDS[side]

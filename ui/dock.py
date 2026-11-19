@@ -185,6 +185,8 @@ class NenaDock(QDockWidget):
             except RuntimeError:
                 continue
         current = self.cb_layer.currentLayer()
+        if current is not None and current is not self.layer and not not_a_centerline(current):
+            self.set_layer(current)
         if current is None or not_a_centerline(current):
             best = preferred_centerline(QgsProject.instance().mapLayers().values())
             if best is not None and best is not current:
@@ -250,6 +252,10 @@ class NenaDock(QDockWidget):
                 self.cb_layer.setLayer(layer)
 
     def set_layer(self, layer):
+        if layer is None:
+            # A picker refresh (layers removed or added) can report "no layer"
+            # for a moment while it still shows one. Trust what it shows.
+            layer = self.cb_layer.currentLayer()
         self.layer = layer if isinstance(layer, QgsVectorLayer) else None
         names = [f.name() for f in self.layer.fields()] if self.layer else []
         self.mapping.set_layer_fields(names)
@@ -1105,6 +1111,7 @@ class NenaDock(QDockWidget):
     def _mirror_from(self, source, layer):
         if self._layer_sync:
             return
+        layer = source.currentLayer()
         self._layer_sync = True
         try:
             if self.cb_layer.currentLayer() != layer:

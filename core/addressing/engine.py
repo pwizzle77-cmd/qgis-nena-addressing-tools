@@ -167,6 +167,106 @@ class AddressContext:
 
 
 # ---------------------------------------------------------------------------
+# Centerline segments per street, so a street is measured without reading
+# every road in the county. One index per layer and field mapping, dropped as
+# soon as the layer's data changes (edits, saves, undo, roll back).
+_STREET_INDEX: Dict[tuple, tuple] = {}     # (layer id, kind) -> (signature, maps)
+_INDEX_WATCHED: set = set()
+
+
+def _drop_street_index(layer_id: str) -> None:
+    for k in [k for k in _STREET_INDEX if k[0] == layer_id]:
+        _STREET_INDEX.pop(k, None)
+
+
+def _watch_for_index(layer) -> bool:
+    """Drop the layer's indexes when its data changes. False when it cannot be watched."""
+    lid = layer.id()
+    if lid in _INDEX_WATCHED:
+        return True
+    signals = [getattr(layer, name, None) for name in ("dataChanged", "afterRollBack", "afterCommitChanges")]
+    if signals[0] is None:
+        return False
+    for sig in signals:
+        if sig is not None:
+            sig.connect(lambda *_a, lid=lid: _drop_street_index(lid))
+    destroyed = getattr(layer, "willBeDeleted", None)
+    if destroyed is not None:
+        destroyed.connect(lambda lid=lid: (_drop_street_index(lid), _INDEX_WATCHED.discard(lid)))
+    _INDEX_WATCHED.add(lid)
+    return True
+
+
+def _no_geometry_request():
+    req = QgsFeatureRequest()
+    no_geom = getattr(getattr(QgsFeatureRequest, "Flag", QgsFeatureRequest), "NoGeometry", None)
+    if no_geom is not None and hasattr(req, "setFlags"):
+        req.setFlags(no_geom)
+    return req
+
+
+def _name_index(layer, acc, kind: str):
+    """(by StreetID, by name key): feature ids in layer order. Cached until the layer changes."""
+    signature = tuple(sorted((n, acc.index[n]) for n in ("StreetID",) + tuple(N.NAME_PARTS) if acc.has(n)))
+    entry = _STREET_INDEX.get((layer.id(), kind))
+    if entry is not None and entry[0] == signature:
+        return entry[1]
+    by_sid: Dict[str, List[Hashable]] = {}
+    by_key: Dict[str, List[Hashable]] = {}
+    has_sid = acc.has("StreetID")
+    for f in layer.getFeatures(_no_geometry_request()):
+        if has_sid:
+            by_sid.setdefault(N.clean(acc.get(f, "StreetID")), []).append(f.id())
+        by_key.setdefault(N.name_key({p: acc.get(f, p) for p in N.NAME_PARTS}), []).append(f.id())
+    maps = (by_sid, by_key)
+    if _watch_for_index(layer):
+        _STREET_INDEX[(layer.id(), kind)] = (signature, maps)
+    return maps
+
+
+def _ordered_features(layer, ids: List[Hashable]) -> list:
+    """The features with these ids, in the order a full read of the layer gives."""
+    if not ids:
+        return []
+    rank = {fid: i for i, fid in enumerate(ids)}
+    feats = list(layer.getFeatures(QgsFeatureRequest().setFilterFids(list(ids))))
+    feats.sort(key=lambda f: rank.get(f.id(), len(rank)))
+    return feats
+
+
+def street_segment_ids(ctx: "AddressContext", sid: str, key: str) -> List[Hashable]:
+    """Ids of the centerlines of one street (by StreetID, else by name), in layer order."""
+    by_sid, by_key = _name_index(ctx.rcl, ctx.rcl_acc, "rcl")
+    if sid:
+        return list(by_sid.get(sid, ()))
+    if not key:
+        return []
+    return list(by_key.get(key, ()))
+
+
+def street_address_ids(ctx: "AddressContext", sid: str, key: str) -> List[Hashable]:
+    """Ids of the address points on one street (by StreetID when mapped, else by name), in layer order."""
+    by_sid, by_key = _name_index(ctx.addr, ctx.addr_acc, "addr")
+    if sid and ctx.addr_acc.has("StreetID"):
+        return list(by_sid.get(sid, ()))
+    return list(by_key.get(key, ()))
+
+
+def driveway_ids_for_site(ctx: "AddressContext", nguid) -> List[Hashable]:
+    """Ids of the driveways that carry this Site_NGUID, in layer order."""
+    layer, acc = ctx.dw, ctx.dw_acc
+    signature = (acc.index.get("Site_NGUID"),)
+    entry = _STREET_INDEX.get((layer.id(), "dw"))
+    if entry is None or entry[0] != signature:
+        by_site: Dict[object, List[Hashable]] = {}
+        for d in layer.getFeatures(_no_geometry_request()):
+            by_site.setdefault(acc.get(d, "Site_NGUID"), []).append(d.id())
+        entry = (signature, by_site)
+        if _watch_for_index(layer):
+            _STREET_INDEX[(layer.id(), "dw")] = entry
+    return list(entry[1].get(nguid, ()))
+
+
 class StreetMeasure:
     """Distance from the road origin along all segments of one street (StreetID, else same name)."""
 
@@ -176,7 +276,7 @@ class StreetMeasure:
         self.segs: Dict[Hashable, Tuple[QgsGeometry, float, float]] = {}   # fid -> (linear geom, length_m, start_m)
         infos = []
         geoms = {}
-        for f in ctx.rcl.getFeatures():
+        for f in _ordered_features(ctx.rcl, street_segment_ids(ctx, sid, key)):
             if sid:
                 if N.clean(ctx.rcl_acc.get(f, "StreetID")) != sid:
                     continue
@@ -491,7 +591,7 @@ def _street_address_locations(ctx: AddressContext, sid: str, parts, side: str, m
     """(feature, number, suffix, measure.locate result) for each address on this street and side."""
     acc = ctx.addr_acc
     key = N.name_key(parts)
-    for f in ctx.addr.getFeatures():
+    for f in _ordered_features(ctx.addr, street_address_ids(ctx, sid, key)):
         if f.id() == exclude:
             continue
         if sid and acc.has("StreetID"):
@@ -537,7 +637,7 @@ def stored_access(ctx: AddressContext, f) -> Optional[QgsPointXY]:
     if ctx.dw is not None and ctx.dw_acc is not None and ctx.dw_acc.has("Site_NGUID") and acc.has("Site_NGUID"):
         nguid = acc.get(f, "Site_NGUID")
         if nguid:
-            for d in ctx.dw.getFeatures():
+            for d in _ordered_features(ctx.dw, driveway_ids_for_site(ctx, nguid)):
                 if ctx.dw_acc.get(d, "Site_NGUID") == nguid and d.hasGeometry():
                     pl = gu.polylines(d.geometry())
                     if pl:

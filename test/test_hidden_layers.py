@@ -114,15 +114,24 @@ def test_hide_keeps_layer_loaded_and_show_puts_it_back(monkeypatch):
 
     assert H.set_hidden(road_types, True, prj)
     assert H.is_hidden(road_types)
-    assert prj.root.findLayer("rt") is None
-    assert not prj.root.children()             # the emptied lookup group went too
-    assert prj.bridge.enabled                  # the layer was not removed from the project
+    node = prj.root.findLayer("rt")
+    assert node is not None                    # QGIS 4 deletes a layer whose node is removed
+    assert node.checked is False
 
     assert not H.set_hidden(road_types, True, prj)   # already hidden
 
     assert H.set_hidden(road_types, False, prj)
     assert not H.is_hidden(road_types)
-    node = prj.root.findLayer("rt")
+    assert prj.root.findLayer("rt") is not None
+
+
+def test_show_adds_a_node_for_a_layer_hidden_the_old_way(monkeypatch):
+    H = _module(monkeypatch)
+    prj = FakeProject()
+    old = FakeMapLayer("old")
+    old.setFlags(old.flags() | FakeMapLayer.LayerFlag.Private)   # hidden by 3.6.15: no node
+    assert H.set_hidden(old, False, prj)
+    node = prj.root.findLayer("old")
     assert node is not None and node.parent().name() == H.GROUP_NAME and node.checked is False
 
 

@@ -65,24 +65,16 @@ def set_hidden(layer, hidden: bool, project=None) -> bool:
     flag = _private_flag()
     node = root.findLayer(layer.id())
     if hidden:
-        if is_hidden(layer) and node is None:
+        if is_hidden(layer):
             return False
+        # The private flag alone keeps the table out of the Layers panel. Do not
+        # remove its tree node: QGIS 4 deletes a layer whose node is removed on
+        # the next event loop, even with the registry bridge turned off.
         layer.setFlags(layer.flags() | flag)
         if node is not None:
-            # Take the layer out of the Layers panel without removing it from the project.
-            bridge = prj.layerTreeRegistryBridge()
-            was = bridge.isEnabled()
-            bridge.setEnabled(False)
-            parent = node.parent()
-            try:
-                parent.removeChildNode(node)
-                # a group that only held support tables goes too
-                if parent is not root and not parent.children() and parent.name() in _SUPPORT_GROUPS:
-                    parent.parent().removeChildNode(parent)
-            finally:
-                bridge.setEnabled(was)
+            node.setItemVisibilityChecked(False)
         return True
-    if not is_hidden(layer) and node is not None:
+    if not is_hidden(layer):
         return False
     layer.setFlags(layer.flags() & ~flag)
     if node is None:
