@@ -925,6 +925,15 @@ def link_access(ctx: AddressContext, point: QgsPointXY, street_id: str = "", rcl
     return aid, feat.id()
 
 
+def address_lookup_defaults(ctx: AddressContext) -> Dict[str, str]:
+    """Defaults ticked in the lookup tables for address fields (status, type, placement …)."""
+    try:
+        from ..lookups import field_defaults
+        return field_defaults(ctx.pcfg, "address")
+    except Exception:  # noqa: BLE001 - no lookup tables
+        return {}
+
+
 def commit_address(ctx: AddressContext, plan: AddressPlan, number: int, suffix: str = "", unit: str = "",
                    placement: Optional[str] = None, create_driveway: Optional[bool] = None, *,
                    unit_type: str = "", building: str = "", address_status: str = "",
@@ -944,7 +953,7 @@ def commit_address(ctx: AddressContext, plan: AddressPlan, number: int, suffix: 
                                   plan.parent_driveway)
     vals = dict(plan.parts)
     vals.update({"Add_Number": int(number), "AddNum_Suf": suffix or None, "Unit": unit or None,
-                 "Placement": placement or a.placement, "StreetID": plan.street_id or None,
+                 "Placement": placement or None, "StreetID": plan.street_id or None,
                  "FullName": plan.full_name or None,
                  "RCL_NGUID": plan.rcl_nguid or None, "Access_X": access_addr.x(), "Access_Y": access_addr.y(),
                  "Addr_Side": plan.side, "Site_NGUID": site_nguid, "DateUpdate": stamp,
@@ -964,6 +973,12 @@ def commit_address(ctx: AddressContext, plan: AddressPlan, number: int, suffix: 
     for field_name, value in address_fallbacks(ctx.rcl_cfg, plan.side, plan.community).items():
         if vals.get(field_name) in (None, ""):
             vals[field_name] = value
+    # What the user picked wins, then the side of the road, then the lookup-table default.
+    for field_name, value in address_lookup_defaults(ctx).items():
+        if vals.get(field_name) in (None, ""):
+            vals[field_name] = value
+    if vals.get("Placement") in (None, ""):
+        vals["Placement"] = a.placement or None
     wgs = _xf(ctx.rcl.crs(), QgsCoordinateReferenceSystem("EPSG:4326")).transform(plan.rooftop)
     vals["Longitude"], vals["Latitude"] = round(wgs.x(), 7), round(wgs.y(), 7)
     geom = QgsGeometry.fromPointXY(roof_addr)

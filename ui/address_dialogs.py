@@ -15,7 +15,7 @@ class AddressDialog(NormalDialog):
     """Review the calculated address before it is written."""
 
     def __init__(self, parent, plan, placement="Structure", _driveway_available=True, _create_driveway=False,
-                 unit_types=()):
+                 unit_types=(), statuses=(), types=(), placements=(), defaults=None):
         # The extra arguments stay so older callers still load.
         # Place address does not draw a driveway. Draw driveway is its own tool.
         super().__init__(parent)
@@ -54,9 +54,20 @@ class AddressDialog(NormalDialog):
         form.addRow("Unit type", self.cb_unit_type)
         self.ed_unit = QLineEdit()
         form.addRow("Unit", self.ed_unit)
+        defaults = defaults or {}
+        # Status and type start on the value ticked as Default in Lookup tables.
+        self.cb_status = self._pick_list(statuses, defaults.get("AddressStatus", ""))
+        form.addRow("Status", self.cb_status)
+        self.cb_type = self._pick_list(types, defaults.get("AddressType", ""))
+        form.addRow("Type", self.cb_type)
         self.cb_place = QComboBox()
-        self.cb_place.addItems(PLACEMENT_VALUES)
-        self.cb_place.setCurrentText(placement)
+        for code, label in (placements or [(p, p) for p in PLACEMENT_VALUES]):
+            self.cb_place.addItem(label, code)
+        index = self.cb_place.findData(placement)
+        if index < 0:
+            self.cb_place.addItem(placement, placement)
+            index = self.cb_place.count() - 1
+        self.cb_place.setCurrentIndex(index)
         form.addRow("Placement", self.cb_place)
         lay.addLayout(form)
         if plan.community:
@@ -70,6 +81,20 @@ class AddressDialog(NormalDialog):
         bb.rejected.connect(self.reject)
         lay.addWidget(bb)
 
+    @staticmethod
+    def _pick_list(choices, default):
+        box = QComboBox()
+        box.addItem("", "")
+        for code, label in choices or ():
+            box.addItem(label, code)
+        index = box.findData(default) if default else -1
+        if default and index < 0:
+            box.addItem(default, default)
+            index = box.count() - 1
+        box.setCurrentIndex(max(index, 0))
+        box.setVisible(bool(choices) or bool(default))
+        return box
+
     def _choice(self, text):
         digits = "".join(ch for ch in text if ch.isdigit())
         self.sp_number.setValue(int(digits or 0))
@@ -78,7 +103,9 @@ class AddressDialog(NormalDialog):
     def values(self):
         return dict(number=self.sp_number.value(), suffix=self.ed_suffix.text().strip().upper(),
                     unit=self.ed_unit.text().strip(), unit_type=self.cb_unit_type.currentData() or "",
-                    placement=self.cb_place.currentText(),
+                    placement=self.cb_place.currentData() or self.cb_place.currentText(),
+                    address_status=self.cb_status.currentData() or "",
+                    address_type=self.cb_type.currentData() or "",
                     create_driveway=False)
 
 

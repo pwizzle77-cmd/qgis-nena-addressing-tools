@@ -380,6 +380,12 @@ class QgsFields:
                 return i
         return -1
 
+    def indexFromName(self, name):
+        for i, f in enumerate(self._f):
+            if f.name() == name:
+                return i
+        return -1
+
     def at(self, i):
         return self._f[i]
 
@@ -575,6 +581,9 @@ class QgsVectorLayer:
     def wkbType(self):
         return getattr(self, "_wkb", 2)
 
+    def isSpatial(self):
+        return self.wkbType() != 100
+
     def isModified(self):
         return False
 
@@ -628,6 +637,14 @@ class QgsVectorLayer:
     def rollBack(self):
         self._editable = False
 
+    def commitChanges(self):
+        self._committed.update({fid: copy.deepcopy(f) for fid, f in self._feats.items()})
+        self._editable = False
+        return True
+
+    def commitErrors(self):
+        return []
+
     def beginEditCommand(self, text):
         self.commands.append(text)
         self.editCommandStarted.emit(text)
@@ -637,6 +654,9 @@ class QgsVectorLayer:
 
     def destroyEditCommand(self):
         self.editCommandDestroyed.emit()
+
+    def changeAttributeValue(self, fid, index, value, old=None):
+        return self.changeAttributeValues(fid, {index: value})
 
     def changeAttributeValues(self, fid, new, old=None):
         f = self._feats[fid]
@@ -687,6 +707,17 @@ class QgsProviderRegistry:
 
     def providerMetadata(self, key):
         return None
+
+    def decodeUri(self, provider, uri):
+        return {}
+
+
+class QgsDataSourceUri:
+    def __init__(self, uri=""):
+        self._uri = uri
+
+    def table(self):
+        return ""
 
 
 class QgsProject:

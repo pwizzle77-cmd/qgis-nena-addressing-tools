@@ -27,6 +27,7 @@ from ..compat import geometry_type_line
 from ..core.addressing import engine as E
 from ..core.addressing.units import next_unit
 from ..core.layer_access import ConfigError
+from ..core import lookups as LK
 from ..core.lookups import unit_type_choices
 from .address_dialogs import AddressDialog
 
@@ -237,14 +238,18 @@ class AddressTool(_AccessTool):
             self.notify("Warning", str(exc))
             self._reset()
             return
-        a = self.ctx.pcfg.addresses
-        dlg = AddressDialog(self.canvas().window(), plan, a.placement, False, False,
-                            unit_type_choices(self.ctx.pcfg))
+        pcfg = self.ctx.pcfg
+        dlg = AddressDialog(self.canvas().window(), plan, LK.default_placement(pcfg), False, False,
+                            unit_type_choices(pcfg), statuses=LK.choices_for(pcfg, "address_status"),
+                            types=LK.choices_for(pcfg, "address_type"), placements=LK.choices_for(pcfg, "Placement"),
+                            defaults=LK.field_defaults(pcfg, "address"))
         if dlg.exec():
             v = dlg.values()
             try:
                 ids = E.commit_address(self.ctx, plan, v["number"], v["suffix"], v["unit"], v["placement"],
-                                       False, unit_type=v.get("unit_type") or "")
+                                       False, unit_type=v.get("unit_type") or "",
+                                       address_status=v.get("address_status") or "",
+                                       address_type=v.get("address_type") or "")
             except ConfigError as exc:
                 self.notify("Warning", str(exc))
             else:
@@ -648,7 +653,7 @@ class PlaceUnitsTool(_AccessTool):
             return
         number, suffix, unit = next_unit(v["scheme"], v["index"], base, v["prefix"], v["start"])
         try:
-            ids = E.commit_address(self.ctx, plan, number, suffix, unit, self.ctx.pcfg.addresses.placement,
+            ids = E.commit_address(self.ctx, plan, number, suffix, unit, LK.default_placement(self.ctx.pcfg),
                                    v["create_driveway"], unit_type=v["unit_type"], building=v["building"])
         except ConfigError as exc:
             self.notify("Warning", str(exc))

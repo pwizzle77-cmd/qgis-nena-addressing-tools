@@ -11,6 +11,7 @@ from qgis.PyQt.QtWidgets import (QCheckBox, QDoubleSpinBox, QFileDialog, QFormLa
                                  QSpinBox, QTableWidgetItem, QVBoxLayout, QWidget)
 
 from ..compat import point_layer_filter
+from ..core import lookups as LK
 from ..core import tables
 from ..core.addressing import engine as E
 from ..core.addressing.checks import address_issues, centerline_boundary_issues
@@ -178,6 +179,13 @@ class AddressesTab(QWidget):
         f = QFormLayout(g)
         self.cb_place = combo([(p, p) for p in PLACEMENT_VALUES])
         f.addRow("Placement", self.cb_place)
+        f.addRow(hint("Status, type and placement start on the value ticked <b>Default</b> in "
+                      "<b>Lookup tables</b>. A value ticked there wins over Placement above."))
+        b = QPushButton("Fill empty fields")
+        b.setToolTip("Give the selected address points (all, when none are selected) the Default value of "
+                     "each list where the field is empty: status, type, placement, agency. Filled fields stay.")
+        b.clicked.connect(self.fill_empty)
+        f.addRow(b)
         self.chk_overlay = QCheckBox("Show where selected addresses were addressed on the road")
         f.addRow(self.chk_overlay)
         lay.addWidget(g)
@@ -279,7 +287,17 @@ class AddressesTab(QWidget):
         self.tbl_over.setRowCount(0)
         for comm, o in sorted(a.overrides.items()):
             self._add_override(dict(o, community=comm))
-        set_combo_data(self.cb_place, a.placement)
+        lookup_place = ""
+        try:
+            lookup_place = LK.list_defaults(self.pcfg).get("Placement", "")
+        except Exception:  # noqa: BLE001
+            lookup_place = ""
+        if lookup_place and self.cb_place.findData(lookup_place) < 0:
+            self.cb_place.addItem(lookup_place, lookup_place)
+        set_combo_data(self.cb_place, lookup_place or a.placement)
+        self.cb_place.setEnabled(not lookup_place)
+        self.cb_place.setToolTip("Set by the value ticked Default in Lookup tables" if lookup_place
+                                 else "Placement method new addresses get")
         self.chk_overlay.setChecked(a.overlay)
         self.dock.mapping.load_rules(a.attribution_rules)
         self._vis()
@@ -325,7 +343,8 @@ class AddressesTab(QWidget):
                     except ValueError:
                         pass
             a.overrides[comm] = {k: v for k, v in o.items() if v not in ("", None)}
-        a.placement = self.cb_place.currentData()
+        if self.cb_place.isEnabled():
+            a.placement = self.cb_place.currentData()
         a.create_driveway = False
         a.overlay = self.chk_overlay.isChecked()
         self.dock.mapping.store_rules(a)
@@ -413,6 +432,19 @@ class AddressesTab(QWidget):
             layers = {"address": ctx.addr, "centerline": ctx.rcl}
             dlg.selectRequested.connect(lambda role, fids: layers[role].selectByIds(fids))
             dlg.exec()
+        self.dock._guard(do)
+
+    def fill_empty(self):
+        def do():
+            pcfg = self.store()
+            ctx = self.context()
+            LK.sync_defaults(pcfg, self.dock.layer)
+            if not LK.field_defaults(pcfg, "address"):
+                self.dock._msg("No address list has a Default ticked. Tick one in Lookup tables first.", "Info")
+                return
+            fids = ctx.addr.selectedFeatureIds() or None
+            n = LK.fill_empty_from_lookups(pcfg, "address", ctx.addr, fids)
+            self.dock._msg(f"Filled empty fields on {n} address point(s) from the lookup defaults.", "Success")
         self.dock._guard(do)
 
     def attribute_addresses(self):
