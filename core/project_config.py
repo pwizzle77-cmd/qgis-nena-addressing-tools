@@ -131,7 +131,12 @@ class LookupSettings:
 class DisplaySettings:
     """How the plugin's own tables appear in the Layers panel."""
 
-    hide_support_tables: bool = True     # version and lookup tables stay loaded but out of the Layers panel
+    # False: version and lookup tables sit in collapsed Versions / Lookup tables
+    # subgroups. True: hidden completely (loaded, but out of the Layers panel).
+    hide_support_tables: bool = False
+    # True once someone chose hidden or shown. Before 3.6.17 hidden was the
+    # default, so a project saved without this choice moves to the subgroups.
+    support_layout_chosen: bool = False
 
 
 @dataclass
@@ -167,6 +172,8 @@ class ProjectConfig:
         _load_street_types(cfg.street_types, (data or {}).get("street_types"))
         _load(cfg.lookups, (data or {}).get("lookups") or {})
         _load(cfg.display, (data or {}).get("display") or {})
+        if not cfg.display.support_layout_chosen:
+            cfg.display.hide_support_tables = False
         return cfg
 
     @classmethod

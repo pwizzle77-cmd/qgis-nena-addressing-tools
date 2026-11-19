@@ -92,8 +92,9 @@ class NenaRclPlugin:
         self.act_hide_tables = QAction("Hide version and lookup tables", self.iface.mainWindow())
         self.act_hide_tables.setCheckable(True)
         self.act_hide_tables.setToolTip("Keep the version (history) tables and the lookup tables out of the "
-                                        "Layers panel. They stay loaded, so change tracking and the "
-                                        "drop-down lists keep working.")
+                                        "Layers panel completely. Unticked, they sit in the collapsed Versions "
+                                        "and Lookup tables groups. Either way they stay loaded, so change "
+                                        "tracking and the drop-down lists keep working.")
         self.act_hide_tables.toggled.connect(self._set_tables_hidden)
         self.actions.append(self.act_hide_tables)
         self._windows_button_slot = self.toolbar.addSeparator()
@@ -534,7 +535,8 @@ class NenaRclPlugin:
             self.dock.addresses.load()
             self.dock.lookups.load()
             self.dock.sync_archive_option()
-        self._sync_hide_tables()
+        # Version and lookup tables into their subgroups (or hidden, if the project says so).
+        QTimer.singleShot(0, self._arrange_support_tables)
         # Put the drop-downs back on fields added since the project was last saved.
         QTimer.singleShot(0, self._apply_dropdowns)
 
@@ -552,18 +554,27 @@ class NenaRclPlugin:
         finally:
             self.act_hide_tables.blockSignals(False)
 
+    def _arrange_support_tables(self):
+        with contextlib.suppress(Exception):  # layout is a convenience, never a reason to fail loading
+            from .core.hidden_layers import apply_support_layout
+            from .core.project_config import load_project_config
+            apply_support_layout(load_project_config())
+        self._sync_hide_tables()
+
     def _set_tables_hidden(self, hidden):
         from .core.hidden_layers import set_support_hidden
         from .core.project_config import load_project_config, save_project_config
         pcfg = load_project_config()
         pcfg.display.hide_support_tables = bool(hidden)
+        pcfg.display.support_layout_chosen = True
         save_project_config(pcfg)
         changed = set_support_hidden(pcfg, bool(hidden))
         if hidden:
             text = (f"Hid {changed} version and lookup table(s). They are still loaded and still updated. "
                     "Untick NENA ▾ → Hide version and lookup tables to see them again.")
         else:
-            text = f"Showing {changed} version and lookup table(s) in the group 'NENA support tables'."
+            text = (f"{changed} version and lookup table(s) are in the Versions and Lookup tables groups, "
+                    "at the bottom of the NENA group.")
         self._notify("Info", text)
 
     def _apply_dropdowns(self):
