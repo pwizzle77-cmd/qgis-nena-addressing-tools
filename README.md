@@ -662,6 +662,17 @@ Under **Settings → Sides**, pick your ZIP, MSAG community, and ESN polygon lay
 - **Copy road side** gives existing address points the values from their side of the road.
 - New addresses copy their side automatically.
 
+#### City limits (IncMuni and UnincCom)
+
+Also under **Settings → Sides**:
+
+- **City limits** — your incorporated city polygons, and the field holding the city name. Each side of the road inside a city gets that name in **IncMuni_L / IncMuni_R**.
+- **Outside city limits** — what IncMuni gets on a side that isn't in any city. NENA uses `Unincorporated` (the default).
+- **Look out from road** — how far each side is checked (default 40 m, about 130 ft). City limits are often drawn on the right-of-way line instead of the centerline, so the plugin checks several points from 3 m out to this distance and the majority wins. That way a city can be on one side of the road and unincorporated on the other, even when the limit line sits a few metres off the centerline. Set it a little wider than your widest right-of-way.
+- **Unincorporated community** (optional) — polygons for named unincorporated places. Their name goes in **UnincCom** only on sides outside city limits; on a city side UnincCom is left blank.
+
+Then use **Calculate sides** (or **Split where the side changes** where the city limit crosses the road). Addresses copy **Inc_Muni** and **Uninc_Comm** from their side like ZIP and ESN.
+
 **Map markers:** when address points are selected, the map shows where each one meets the road. Blue means OK. Red means the road has moved away from the access point. Hollow grey means the access point was estimated. Nothing is written. Clear the selection and the markers go away.
 
 ### Renaming part of a road
@@ -753,7 +764,7 @@ Open **NENA ▾ → Settings**. These are things you set once. **They save autom
 | Page | What you set |
 |---|---|
 | **Fields** | Match your road layer's columns to NENA names |
-| **Sides** | ZIP, MSAG community, and ESN polygon layers |
+| **Sides** | ZIP, MSAG community, ESN, city limits, and unincorporated community polygon layers |
 | **Defaults** | Values like state, county, agency, and one-way that fill **only empty** fields. Leave parity blank so ranging sets it |
 | **Street rules** | When two names count as the same, and what a rename does |
 | **Address rules** | How a new address gets its number |
@@ -866,6 +877,7 @@ To see one feature's history, filter the history table by its ID and sort by ver
 
 ## What's new
 
+- **3.6.14** — City limits on **Settings → Sides** fill IncMuni on each side of the road, with `Unincorporated` (or your own value) outside them, and an optional unincorporated community layer fills UnincCom only outside the city. Each side is checked out to a set distance, so limits drawn on the right-of-way line still put the city on the right side of the road.
 - **3.6.11** — The version (history) tables and lookup tables are hidden from the Layers panel when the plugin creates them. They stay loaded and keep working. Show or hide them with **NENA ▾ → Hide version and lookup tables**.
 - **3.6.10** — The **Centerline** picker leaves out version (history) tables, driveways, and the address, access-point, and street-name layers, and opens on the project's centerline, so streets can't be assigned or drawn into a version table by mistake. Splitting a road (QGIS split, the Split tool, or a new road meeting it) no longer gives the pieces ranges that are a little too high: with distance addressing the split falls where the house numbers are (From + distance ÷ spacing, the same spacing as Address rules), and the address points from the Addresses window anchor the split when none are set on Ranges → Method.
 - **3.6.9** — New roads are **Active** (road status `ACT`) with road class **Local** by default. Both are on **Settings → Defaults**, fill only empty fields, and can be changed or cleared. A project set up earlier gets these two defaults once.

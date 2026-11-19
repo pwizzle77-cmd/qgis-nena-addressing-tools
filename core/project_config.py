@@ -69,7 +69,7 @@ class AddressSettings:
     placement: str = "Structure"
     create_driveway: bool = False            # kept so an older project still loads; Place address ignores it
     attribute_at: str = "rooftop"             # kept so an older project still loads; addresses copy the road side
-    attribution_rules: List[Dict] = field(default_factory=list)   # {layer_id, layer_source, source_field, target}
+    attribution_rules: List[Dict] = field(default_factory=list)   # {layer_id, layer_source, source_field, target, [outside_value, depth_m, optional, outside_of]}
     overlay: bool = True
     overlay_limit: int = 300
     access_layer_id: str = ""

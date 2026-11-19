@@ -557,3 +557,58 @@ def test_centerline_picker_leaves_out_versions_and_driveways(world):
     # the remembered centerline wins; a versions table is never chosen
     assert preferred_centerline([versions, drive, dw, rcl]) is rcl
     assert preferred_centerline([versions, drive]) is None
+
+
+def test_city_limits_on_the_right_of_way_line_split_the_road(world):
+    """City limits 10 m north of Main St: north side in the city, south side unincorporated."""
+    rcl, addr, pcfg, cfg = world["rcl"], world["addr"], world["pcfg"], world["cfg"]
+    for name in ("IncMuni_L", "IncMuni_R", "UnincCom_L", "UnincCom_R"):
+        rcl.addAttribute(QgsField(name, "string"))
+        cfg.mapping[name] = name
+    for name in ("Inc_Muni", "Uninc_Comm"):
+        addr.addAttribute(QgsField(name, "string"))
+    C.save_to_layer(rcl, cfg)
+    city = _layer("city", ["CITY"])
+    _box(city, ["SPRINGFIELD"], [QgsPointXY(-500, 10), QgsPointXY(90, 10), QgsPointXY(90, 500),
+                                 QgsPointXY(-500, 500)])
+    uninc = _layer("uninc", ["PLACE"])
+    _box(uninc, ["OAK GROVE"], [QgsPointXY(-500, -500), QgsPointXY(500, -500), QgsPointXY(500, 500),
+                                QgsPointXY(-500, 500)])
+    pcfg.addresses.attribution_rules += [
+        {"layer_id": city.id(), "source_field": "CITY", "target": "IncMuni",
+         "outside_value": "Unincorporated", "depth_m": 40},
+        {"layer_id": uninc.id(), "source_field": "PLACE", "target": "UnincCom",
+         "optional": True, "depth_m": 40, "outside_of": "IncMuni"}]
+    save_project_config(pcfg)
+    ctx = E.AddressContext(pcfg, rcl, cfg)
+    E.attribute_centerline_sides(ctx, [1])
+    # a single point 3 m off the road would have put both sides outside the city
+    assert attr(rcl, 1, "IncMuni_L") == "SPRINGFIELD"
+    assert attr(rcl, 1, "UnincCom_L") in (None, "")
+    assert attr(rcl, 1, "IncMuni_R") == "Unincorporated"
+    assert attr(rcl, 1, "UnincCom_R") == "OAK GROVE"
+    # the other rules keep their single sample
+    assert attr(rcl, 1, "MSAGComm_L") == "TOWN A"
+    right = E.plan_address(ctx, P(50, 0), P(50, -20))
+    rid = E.commit_address(ctx, right, right.result.number, create_driveway=False)["address"]
+    assert attr(addr, rid, "Inc_Muni") == "Unincorporated" and attr(addr, rid, "Uninc_Comm") == "OAK GROVE"
+    left = E.plan_address(ctx, P(50, 0), P(50, 20))
+    lid = E.commit_address(ctx, left, left.result.number, create_driveway=False)["address"]
+    assert attr(addr, lid, "Inc_Muni") == "SPRINGFIELD" and attr(addr, lid, "Uninc_Comm") in (None, "")
+
+
+def test_city_limits_without_depth_use_one_point(world):
+    rcl, pcfg, cfg = world["rcl"], world["pcfg"], world["cfg"]
+    for name in ("IncMuni_L", "IncMuni_R"):
+        rcl.addAttribute(QgsField(name, "string"))
+        cfg.mapping[name] = name
+    C.save_to_layer(rcl, cfg)
+    city = _layer("city", ["CITY"])
+    _box(city, ["SPRINGFIELD"], [QgsPointXY(-500, 10), QgsPointXY(90, 10), QgsPointXY(90, 500),
+                                 QgsPointXY(-500, 500)])
+    pcfg.addresses.attribution_rules.append(
+        {"layer_id": city.id(), "source_field": "CITY", "target": "IncMuni", "outside_value": "Unincorporated"})
+    save_project_config(pcfg)
+    ctx = E.AddressContext(pcfg, rcl, cfg)
+    E.attribute_centerline_sides(ctx, [1])
+    assert attr(rcl, 1, "IncMuni_L") == "Unincorporated" and attr(rcl, 1, "IncMuni_R") == "Unincorporated"
