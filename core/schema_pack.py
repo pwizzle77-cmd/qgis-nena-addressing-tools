@@ -318,6 +318,9 @@ def format_import_report(entries: Sequence[dict]) -> str:
         blank = int(entry.get("blank") or 0)
         if blank:
             bits.append(f"{blank} empty street name(s) left out")
+        zero = int(entry.get("zero_coordinates") or 0)
+        if zero:
+            bits.append(f"{zero} longitude/latitude of 0 left empty")
         if skipped:
             bits.append(f"{skipped} could not be reprojected")
         if multipart:

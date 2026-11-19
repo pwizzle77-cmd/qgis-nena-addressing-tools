@@ -615,13 +615,6 @@ def fill_empty_from_lookups(pcfg, role: str, layer, fids=None) -> int:
             changes[feature.id()] = vals
     if not changes:
         return 0
-    provider = layer.dataProvider() if hasattr(layer, "dataProvider") else None
-    if not layer.isEditable() and provider is not None and hasattr(provider, "changeAttributeValues"):
-        # Not being edited: the change would be saved at once anyway, so write it
-        # in one batch. Going through the edit buffer took minutes on 37,000 points.
-        if provider.changeAttributeValues(changes):
-            layer.reload()
-            return len(changes)
     started = ensure_editable(layer)
     layer.beginEditCommand("NENA: fill empty fields from lookup defaults")
     for fid, vals in changes.items():

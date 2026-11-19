@@ -192,6 +192,16 @@ def _accepted(res, batch_len):
     return True, batch_len
 
 
+COORDINATE_FIELDS = {"LONGITUDE", "LATITUDE"}
+
+
+def _is_zero(value) -> bool:
+    try:
+        return float(value) == 0.0
+    except (TypeError, ValueError):
+        return False
+
+
 def import_layer(source, dest, field_map, selected_only: bool = False, progress=None) -> dict:
     """
     Copy features into ``dest`` and save them immediately.
@@ -233,7 +243,9 @@ def import_layer(source, dest, field_map, selected_only: bool = False, progress=
         req.setFilterFids(ids)
         total = len(ids)
 
-    written = skipped = null_geom = bad_values = multipart = blank = 0
+    written = skipped = null_geom = bad_values = multipart = blank = zero_coords = 0
+    coord_fields = {i for i in range(dest_fields.count())
+                    if dest_fields.at(i).name().upper() in COORDINATE_FIELDS}
     seen = 0
     batch = []
     name_idx = dest_fields.lookupField("St_Name") if not spatial else -1
@@ -261,12 +273,19 @@ def import_layer(source, dest, field_map, selected_only: bool = False, progress=
             tick()
             continue
         nf = QgsFeature(dest_fields)
+        zero_seen = False
         for di, si, kind in pairs:
             try:
-                nf.setAttribute(di, convert_value(_plain(feat.attribute(si)), kind))
+                value = convert_value(_plain(feat.attribute(si)), kind)
             except (TypeError, ValueError):
                 nf.setAttribute(di, None)
                 bad_values += 1
+                continue
+            if di in coord_fields and value is not None and _is_zero(value):
+                value, zero_seen = None, True     # 0, 0 is "not recorded", not a place in the ocean
+            nf.setAttribute(di, value)
+        if zero_seen:
+            zero_coords += 1
         if spatial:
             geom = feat.geometry()
             if geom is None or geom.isEmpty():
@@ -297,6 +316,7 @@ def import_layer(source, dest, field_map, selected_only: bool = False, progress=
         "written": written,
         "skipped": skipped,
         "blank": blank,
+        "zero_coordinates": zero_coords,
         "null_geometry": null_geom,
         "bad_values": bad_values,
         "multipart": multipart,
