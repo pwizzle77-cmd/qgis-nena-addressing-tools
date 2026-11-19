@@ -220,3 +220,16 @@ def test_live_watchers_cascade_master_edit_and_copy_on_assign():
     rcl.changeAttributeValues(2, {rcl.fields().lookupField("StreetID"): sid_smith})
     assert attr(rcl, 2, "St_Name") == "Smith" and attr(rcl, 2, "St_PosTyp") == "Rd"
     mgr.unload()
+
+
+def test_street_list_rows_sort_and_filter():
+    from nena_addressing_and_rcl_tools.core.streets.listing import build_rows, row_visible, sort_key
+    recs = [N.StreetRecord("{2}", N.parts_from({"St_Name": "Oak", "St_PosTyp": "St"})),
+            N.StreetRecord("{1}", N.parts_from({"St_Name": "Main", "St_PosTyp": "St"})),
+            N.StreetRecord("{3}", N.parts_from({"St_Name": "Elm", "St_PosTyp": "Ave"}), status=N.STATUS_RETIRED)]
+    rows = build_rows(recs, {"{1}": (3, 12), "{2}": (1, 0)})
+    assert [r.street_id for r in rows] == ["{3}", "{1}", "{2}"]          # by name
+    assert (rows[1].segments, rows[1].addresses) == (3, 12) and (rows[0].segments, rows[0].addresses) == (0, 0)
+    assert not row_visible(rows[0], "", False) and row_visible(rows[0], "", True)   # retired
+    assert row_visible(rows[1], " mai ", False) and not row_visible(rows[2], "mai", False)
+    assert sort_key(rows[1], 3) == 3 and sort_key(rows[1], 0) == "MAIN ST"
