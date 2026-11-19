@@ -99,6 +99,10 @@ class NenaDock(QDockWidget):
         self.streets = StreetsTab(self)
         self.addresses = AddressesTab(self)
         self.lookups = LookupPage(self)
+        from .zones_page import ZoneResultsPage, ZonesSettingsPage
+        self.zones_settings = ZonesSettingsPage(self)
+        self.zone_results = ZoneResultsPage(self)
+        self.validation.pages.addTab(self.zone_results, "Zones")
         self.ranging.manual_slot.addWidget(self.edit.manual_group)
         self.versions_group = self._versions_group()
         self.schema_page = self._project_page()
@@ -118,6 +122,8 @@ class NenaDock(QDockWidget):
             ("Ranging", self.ranging.method_page,
              "How numbers are assigned along a street: method, parity, interval, address points, output"),
             ("Checks", self.validation.checks_page, "What Check looks for, and the MSAG extract"),
+            ("Zones", self.zones_settings,
+             "PSAP, provisioning, law, fire, EMS, and other boundary layers; where roads split; exceptions"),
             ("Editing", host_groups(self.edit.auto_group, self.edit.nguid_group, self.versions_group),
              "What happens while you edit, NGUID, and change tracking"),
         ))
@@ -194,12 +200,14 @@ class NenaDock(QDockWidget):
             except RuntimeError:
                 continue
         current = self.cb_layer.currentLayer()
-        if current is not None and current is not self.layer and not not_a_centerline(current):
+        best = preferred_centerline(QgsProject.instance().mapLayers().values())
+        # The picker opens on whatever QGIS lists first. When that layer has no NENA settings and
+        # another one (the project's centerline) does, open on that one, so its settings load.
+        if best is not None and best is not current and (
+                current is None or not_a_centerline(current) or (C.has_config(best) and not C.has_config(current))):
+            self.cb_layer.setLayer(best)
+        elif current is not None and current is not self.layer and not not_a_centerline(current):
             self.set_layer(current)
-        if current is None or not_a_centerline(current):
-            best = preferred_centerline(QgsProject.instance().mapLayers().values())
-            if best is not None and best is not current:
-                self.cb_layer.setLayer(best)
         # The window pickers hear about added layers after this panel does, so
         # bring them in line once every listener has run.
         QTimer.singleShot(0, self._sync_mirrors)
@@ -251,6 +259,14 @@ class NenaDock(QDockWidget):
         b_schema.setToolTip("Create empty NENA road, street, address, driveway, and access-point tables, "
                             "plus the lookup lists, in a GeoPackage, File Geodatabase, or database connection.")
         b_schema.clicked.connect(self.create_schema)
+        b_update = QPushButton("Update schema…")
+        b_update.setToolTip("Add the fields and tables the plugin uses that your existing tables do not have yet. "
+                            "Nothing is removed or replaced, and your data stays.")
+        b_update.clicked.connect(self.update_schema)
+        b_calc = QPushButton("Recalculate fields")
+        b_calc.setToolTip("Fill FullName, LSt_FullName, TravelTime, and Hierarchy on every road, and FullName and "
+                          "FullAddr on every address. Saves recalculate them for the features you edit.")
+        b_calc.clicked.connect(self.recalculate_fields)
         b_import = QPushButton("Import…")
         b_import.setToolTip("Copy existing roads, street names, addresses, and driveways into the schema layers.")
         b_import.clicked.connect(self.import_schema)
@@ -262,6 +278,8 @@ class NenaDock(QDockWidget):
         b_track.setToolTip("Turn change tracking on or off (Settings, Editing)")
         b_track.clicked.connect(lambda *_: self.open_settings("Editing"))
         box.addWidget(b_schema)
+        box.addWidget(b_update)
+        box.addWidget(b_calc)
         box.addWidget(b_import)
         box.addWidget(b_archive)
         box.addWidget(b_track)
@@ -291,7 +309,9 @@ class NenaDock(QDockWidget):
 
     # ------------------------------------------------------------------ layer/config
     def _follow_active_layer(self, layer):
-        if isinstance(layer, QgsVectorLayer) and layer is not self.layer and not not_a_centerline(layer):
+        from ..core.centerline_pick import should_follow
+        if (isinstance(layer, QgsVectorLayer) and layer is not self.layer and not not_a_centerline(layer)
+                and should_follow(layer, self.layer)):
             from ..compat import geometry_type_line
             if layer.geometryType() == geometry_type_line():
                 self.cb_layer.setLayer(layer)
@@ -306,6 +326,11 @@ class NenaDock(QDockWidget):
         self.mapping.set_layer_fields(names)
         stored = C.load_from_layer(self.layer) if self.layer else None
         if stored is not None:
+            # Fields added to the schema after these settings were saved (PSAP_L, TravelTime …) are matched
+            # by name; fields already matched stay as they are.
+            from ..core.config import fill_unmapped
+            if fill_unmapped(stored, names):
+                C.save_to_layer(self.layer, stored)      # once, so the save watchers see the new fields
             self.cfg = stored
             self.lbl_cfg.setText("<i>Configuration loaded from layer.</i>")
         else:
@@ -595,6 +620,7 @@ class NenaDock(QDockWidget):
         if not dlg.exec():
             return
         jobs = dlg.jobs()
+        make_access = dlg.create_access_points()
 
         def do():
             entries = []
@@ -625,7 +651,10 @@ class NenaDock(QDockWidget):
                     })
 
             self._with_progress(run)
+            self._register_imported_zones(jobs)
             text = format_import_report(entries) or "Nothing was imported."
+            if make_access:
+                text += "\n\n" + self._import_access_points()
             QMessageBox.information(self, TITLE, text)
             written = sum(int(entry.get("written") or 0) for entry in entries)
             self._msg(f"Import finished. {written} feature(s) saved.", "Success")
@@ -635,6 +664,132 @@ class NenaDock(QDockWidget):
             self._guard(do)
         finally:
             self._schema_busy = False
+
+    def recalculate_fields(self):
+        """Calculated fields for every road and address, in the edit buffers (one undo step each)."""
+        from ..core import derived as D
+
+        def do():
+            pcfg = load_project_config()
+            done = []
+            if self.layer is not None:
+                acc = D.centerline_accessor(self.layer)
+                if any(acc.has(n) for n in D.CENTERLINE_FIELDS):
+                    n = D.recalculate("centerline", self.layer, acc)
+                    done.append(f"{n} road(s)")
+            addr = layer_for(pcfg.streets, "address")
+            if addr is not None:
+                acc = D.address_accessor(addr, pcfg)
+                if any(acc.has(n) for n in D.ADDRESS_FIELDS):
+                    n = D.recalculate("address", addr, acc)
+                    done.append(f"{n} address(es)")
+            if not done:
+                self._msg("No calculated fields to fill. Add them with Update schema first.", "Info")
+                return
+            self._msg("Recalculated " + " and ".join(done) + ". Save the layers to keep the values.", "Success")
+        self._guard(do)
+
+    def update_schema(self):
+        """Add missing fields to the project's tables, and missing tables beside the roads."""
+        if getattr(self, "_schema_busy", False):
+            return
+        from ..core import schema_update as SU
+        from .schema_dialogs import UpdateSchemaDialog
+
+        def do():
+            self.collect()
+            pcfg = load_project_config()
+            plan = SU.plan_update(pcfg, self.layer, self.cfg)
+            if plan.empty:
+                self._msg("Every table already has the fields and tables the plugin uses.", "Success")
+                return
+            dlg = UpdateSchemaDialog(self, plan)
+            if not dlg.exec():
+                return
+            result = SU.apply_fields(plan, self.cfg)
+            if self.layer is not None and result.added.get("Road centerlines"):
+                C.save_to_layer(self.layer, self.cfg)
+                self.mapping.set_layer_fields([f.name() for f in self.layer.fields()])
+                self.mapping.load(self.cfg)
+            keys = SU.missing_keys(plan)
+            if keys:
+                result.created.extend(self._create_missing_tables(plan, keys))
+            lines = [f"{title}: added {', '.join(cols)}." for title, cols in result.added.items()]
+            if result.created:
+                lines.append("New tables: " + ", ".join(result.created) + ".")
+            lines += result.skipped
+            QMessageBox.information(self, TITLE, "\n".join(lines) or "Nothing was changed.")
+            self.streets.load()
+            self.addresses.load()
+            self.zones_settings.load()
+        self._schema_busy = True
+        try:
+            self._guard(do)
+        finally:
+            self._schema_busy = False
+
+    def _create_missing_tables(self, plan, keys) -> list:
+        """Make the missing tables in the roads' GeoPackage or File Geodatabase. A table already there is used."""
+        from ..core import schema_update as SU
+        from ..core import tables as TB
+        from ..core.schema_writer import _prepare_target, planned_tables
+        target = SU.container_target(plan)
+        if target is None:
+            return []
+        _prepare_target(target)
+        rcl_tpl = self.cfg.template or None
+        addr_tpl = load_project_config().addresses.address_template or None
+        created, make = {}, []
+        for spec, table, _archive in planned_tables(target, keys):
+            if TB.ogr_has_table(target.path, table):
+                created[spec.key] = TB.open_ogr_table(target.path, table, spec.title)
+            else:
+                make.append(spec.key)
+        if make:
+            crs = self.layer.crs() if self.layer is not None else QgsProject.instance().crs()
+            try:
+                created.update(create_schema(target, crs, make, rcl_tpl, addr_tpl))
+            except SchemaCreateError as exc:
+                created.update(exc.created)
+                self._adopt_schema(created, target, rcl_tpl, addr_tpl)
+                raise
+        self._adopt_schema(created, target, rcl_tpl, addr_tpl)
+        return [lyr.name() for lyr in created.values()]
+
+    def _register_imported_zones(self, jobs):
+        """Zone tables filled by the import become zone layers (Settings, Zones) if they are not yet."""
+        from ..core import zones as Z
+        pcfg = load_project_config()
+        zones = Z.load_zones(pcfg.zones.layers)
+        known = {z.layer_id for z in zones}
+        added = False
+        for job in jobs:
+            key, dest = job["key"], job["dest"]
+            if not key.startswith("zone_") or dest is None or dest.id() in known:
+                continue
+            zones.append(Z.new_zone(dest.id(), dest.source(), key[5:]))
+            known.add(dest.id())
+            added = True
+        if added:
+            pcfg.zones.layers = Z.dump_zones(zones)
+            save_project_config(pcfg)
+            self.zones_settings.load()
+
+    def _import_access_points(self) -> str:
+        """Create and save access points for addresses that have none. Returns a line for the report."""
+        from ..core.addressing import access_build as AB
+        try:
+            ctx = self.addresses.context()
+            result = self._with_progress(lambda cb: AB.build_access_points(ctx, commit=True, progress=cb))
+        except ConfigError as exc:
+            return f"Access points were not created: {exc}"
+        text = "Access points: " + result.summary()
+        if result.skipped:
+            ctx.addr.selectByIds([fid for fid, _reason in result.skipped])
+            text += self.addresses._skip_note(result) + " The skipped addresses are selected."  # noqa: SLF001
+        if result.errors:
+            text += " " + " ".join(result.errors)
+        return text
 
     def _adopt_schema(self, created, target, rcl_tpl, addr_tpl, watch=False):
         """Add the new layers to the project and point the panel at them."""
@@ -688,6 +843,17 @@ class NenaDock(QDockWidget):
             made_archive = True
         if made_archive:
             pcfg.archive.enabled = bool(watch)
+        from ..core import zones as Z
+        zones = Z.load_zones(pcfg.zones.layers)
+        for kind in Z.ZONE_KINDS:
+            lyr = created.get(f"zone_{kind.key}")
+            # A zone layer you already use for this kind (often in its own database) stays the one used.
+            if lyr is None or any(z.kind == kind.key for z in zones):
+                continue
+            zones.append(Z.new_zone(lyr.id(), lyr.source(), kind.key))
+        pcfg.zones.layers = Z.dump_zones(zones)
+        if created.get("exceptions") is not None:
+            remember(pcfg.zones, "exceptions", created["exceptions"])
         save_project_config(pcfg)
         with contextlib.suppress(Exception):  # the tables exist even if a drop-down cannot be wired yet
             apply_value_relations(pcfg)
@@ -702,7 +868,8 @@ class NenaDock(QDockWidget):
         try:
             # Archive layers first, then streets, so centerlines are added last and sit on top.
             order = [key for _role, key in archive_roles]
-            order += [key for key, _table, _title, _role in LOOKUP_SPECS]
+            order += [key for key, _table, _title, _role in LOOKUP_SPECS] + ["exceptions"]
+            order += [f"zone_{kind.key}" for kind in reversed(Z.ZONE_KINDS)]
             order += ["streets", "driveway", "access", "address", "centerline"]
             for key in order:
                 lyr = created.get(key)
@@ -715,6 +882,7 @@ class NenaDock(QDockWidget):
         self.streets.load()
         self.addresses.load()
         self.lookups.load()
+        self.zones_settings.load()
         if created.get("centerline") is not None:
             self.cb_layer.setLayer(created["centerline"])
         # New layers get the NENA look straight away.
@@ -1080,7 +1248,7 @@ class NenaDock(QDockWidget):
             fids = layer.selectedFeatureIds() or None
             rep = split_existing_intersections(layer, cfg, fids)
             extra = ""
-            if rep["affected"] and pcfg.addresses.attribution_rules:
+            if rep["affected"] and _side_rules(pcfg):
                 ctx = attribution_context(layer, cfg, pcfg)
                 n, crossings = attribute_centerline_sides(ctx, rep["affected"])
                 extra = f" Calculated the side of {n} section(s)."
@@ -1232,3 +1400,9 @@ class NenaDock(QDockWidget):
         self.edit.chk_split.setChecked(enabled)
         self._persist()
 
+
+
+def _side_rules(pcfg):
+    """Settings, Sides rules plus PSAP from the PSAP zone layer (see zones.side_rules)."""
+    from ..core.zones import side_rules
+    return side_rules(pcfg)

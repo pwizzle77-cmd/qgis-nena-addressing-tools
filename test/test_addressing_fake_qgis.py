@@ -561,6 +561,23 @@ def test_centerline_picker_leaves_out_versions_and_driveways(world):
     assert preferred_centerline([versions, drive]) is None
 
 
+def test_centerline_with_settings_wins_over_other_line_layers(world):
+    """Railroads (no NENA settings) never take over from the configured road layer."""
+    from nena_addressing_and_rcl_tools.core.centerline_pick import preferred_centerline, should_follow
+    from nena_addressing_and_rcl_tools.core.project_config import load_project_config
+    rcl = world["rcl"]
+    rail = _layer("Railroads", ["NAME"])
+    pcfg = load_project_config()
+    remember(pcfg.streets, "centerline", rail)           # a stale pick saved by an earlier session
+    assert preferred_centerline([rail, rcl], pcfg) is rcl
+    assert not should_follow(rail, rcl)                  # clicking railroads keeps the roads
+    assert should_follow(rcl, rail)                      # clicking the roads switches back to them
+    assert should_follow(rail, None)
+    other = _layer("Roads 2", RCL)
+    C.save_to_layer(other, world["cfg"])
+    assert should_follow(other, rcl)                     # another configured centerline may be picked
+
+
 def test_city_limits_on_the_right_of_way_line_split_the_road(world):
     """City limits 10 m north of Main St: north side in the city, south side unincorporated."""
     rcl, addr, pcfg, cfg = world["rcl"], world["addr"], world["pcfg"], world["cfg"]
@@ -711,3 +728,146 @@ def test_empty_fields_message_says_which_have_a_default():
     assert msg == ("Empty: AddressStatus (Fill empty fields gives them the lookup defaults); "
                    "AddressType (no default: tick one in Lookup tables, or enter the values)")
     assert "no default" not in empty_fields_message(["AddressStatus"], {"AddressStatus"})
+
+
+# ---------------------------------------------------------------------------
+# Create access points for imported addresses
+def _point(lyr, values, x, y):
+    names = [f.name() for f in lyr.fields()]
+    fid = lyr.add_committed([values.get(n) for n in names], None)
+    lyr._feats[fid].setGeometry(QgsGeometry.fromPointXY(QgsPointXY(x, y)))
+    lyr._committed[fid] = lyr._feats[fid]
+    return fid
+
+
+def test_create_access_points_for_imported_addresses(world):
+    from nena_addressing_and_rcl_tools.core.addressing import access_build as AB
+    addr, rcl, dw = world["addr"], world["rcl"], world["dw"]
+    addr.addAttribute(QgsField("AccessPointID", "string"))
+    dw.addAttribute(QgsField("AccessPointID", "string"))
+    access = _layer("access", ["AccessPointID", "RCL_NGUID", "StreetID", "RoadSide", "DateUpdate"])
+    remember(world["pcfg"].addresses, "access", access)
+    save_project_config(world["pcfg"])
+    off = 10 * 0.3048
+    existing = _point(access, {"AccessPointID": "EX"}, 30, off)
+
+    a = _point(addr, {"Add_Number": 151, "Access_X": 50.0, "Access_Y": 0.0}, 50, 30)
+    b = _point(addr, {"Add_Number": 153, "Access_X": 50.0, "Access_Y": 0.0}, 52, 25)       # same spot: shares
+    c = _point(addr, {"Add_Number": 140}, 40, -20)                                          # nearest road, right
+    d = _point(addr, {"Add_Number": 251, "AccessPointID": "KEEP", "Access_X": 150.0, "Access_Y": 0.0}, 150, 20)
+    e = _point(addr, {"Add_Number": 131, "AccessPointID": "EX"}, 30, 25)                    # already linked
+    f = _point(addr, {"Add_Number": 260, "Access_X": -10000.0, "Access_Y": -10000.0}, 160, -30)  # bad stored
+    g = _point(addr, {"Add_Number": 171, "Site_NGUID": "SITE7"}, 72, 45)                  # driveway
+    drive = dw.add_committed(["DW1", "SITE7", "R1", "S1", None, None], [(70, 40), (70, 0.5)])  # drawn from house
+    h = _point(addr, {"Add_Number": 180, "Addr_Side": "R"}, 80, 0)                          # on the line
+
+    ctx = E.AddressContext(world["pcfg"], rcl, world["cfg"])
+    result = AB.build_access_points(ctx)
+    assert not result.skipped and result.already == 1
+    assert result.created == 6           # a/b, c, KEEP, f, the driveway, h
+    assert result.linked == 7
+
+    def aid(fid):
+        return attr(addr, fid, "AccessPointID")
+
+    def seat(access_id):
+        feat = next(x for x in access._feats.values() if _raw(x, access, "AccessPointID") == access_id)
+        pt = feat.geometry().asPoint()
+        return round(pt.x(), 3), round(pt.y(), 3), _raw(feat, access, "RoadSide"), _raw(feat, access, "RCL_NGUID")
+
+    assert aid(a) == aid(b) and seat(aid(a)) == (50, round(off, 3), "L", "R1")
+    assert (attr(addr, a, "Addr_Side"), attr(addr, a, "RCL_NGUID")) == ("L", "R1")
+    assert seat(aid(c)) == (40, round(-off, 3), "R", "R1")
+    assert (attr(addr, c, "Access_X"), attr(addr, c, "Access_Y")) == (40.0, 0.0)
+    assert aid(d) == "KEEP" and seat("KEEP") == (150, round(off, 3), "L", "R2")
+    assert aid(e) == "EX" and len([x for x in access._feats.values() if _raw(x, access, "AccessPointID") == "EX"]) == 1
+    assert seat(aid(f)) == (160, round(-off, 3), "R", "R2")
+    assert attr(addr, f, "Access_X") == -10000.0          # a filled value is never overwritten
+    assert seat(aid(g)) == (70, round(off, 3), "L", "R1")
+    assert attr(dw, drive, "AccessPointID") == aid(g)
+    assert seat(aid(h))[2] == "R"
+    assert existing in access._feats
+
+    again = AB.build_access_points(ctx)
+    assert again.plans == [] and again.already == 8
+
+
+def test_create_access_points_adds_the_link_field_and_needs_an_access_layer(world):
+    from nena_addressing_and_rcl_tools.core.addressing import access_build as AB
+    _point(world["addr"], {"Add_Number": 151, "Access_X": 50.0, "Access_Y": 0.0}, 50, 30)
+    with pytest.raises(ConfigError):
+        AB.build_access_points(world["ctx"])
+    access = _layer("access", ["AccessPointID", "RCL_NGUID", "StreetID", "RoadSide", "DateUpdate"])
+    remember(world["pcfg"].addresses, "access", access)
+    save_project_config(world["pcfg"])
+    ctx = E.AddressContext(world["pcfg"], world["rcl"], world["cfg"])
+    result = AB.build_access_points(ctx, commit=True)
+    assert world["addr"].fields().lookupField("AccessPointID") >= 0
+    assert result.created == 1 and result.saved
+
+
+def test_update_schema_adds_missing_fields_and_keeps_data(world):
+    from nena_addressing_and_rcl_tools.core import schema_update as SU
+    addr = world["addr"]
+    fid = _point(addr, {"Add_Number": 151}, 50, 30)
+    plan = SU.plan_update(world["pcfg"], world["rcl"], world["cfg"])
+    table = next(t for t in plan.tables if t.key == "address")
+    wanted = {f.name: f for f in table.fields}
+    assert wanted["AccessPointID"].checked
+    assert "Add_Number" not in wanted
+    assert {m.key for m in plan.missing} >= {"access", "exceptions"}
+    assert not any(m.can_create for m in plan.missing)       # the fake layers are not in a GeoPackage
+    result = SU.apply_fields(plan, world["cfg"])
+    assert "AccessPointID" in result.added["Address points"]
+    assert addr.fields().lookupField("AccessPointID") >= 0
+    assert attr(addr, fid, "Add_Number") == 151
+    again = SU.plan_update(world["pcfg"], world["rcl"], world["cfg"])
+    left = next(t for t in again.tables if t.key == "address")
+    assert not any(f.checked for f in left.fields)
+
+
+def test_rename_updates_road_full_name_and_full_address_and_recalculate(world):
+    from nena_addressing_and_rcl_tools.core import derived as D
+    rcl, addr = world["rcl"], world["addr"]
+    for name, kind in (("FullName", "string"), ("SpeedLimit", "int"), ("TravelTime", "double"),
+                       ("RoadClass", "string"), ("Hierarchy", "int"), ("LSt_Name", "string"),
+                       ("LSt_Typ", "string"), ("LSt_FullName", "string")):
+        rcl.addAttribute(QgsField(name, kind))
+    for name in ("FullName", "FullAddr", "UnitType"):
+        addr.addAttribute(QgsField(name, "string"))
+    a = _point(addr, {"Add_Number": 151, "St_Name": "Main", "St_PosTyp": "St", "StreetID": "S1",
+                      "Unit": "4", "UnitType": "Apt"}, 50, 30)
+    svc = StreetService(world["pcfg"], centerline_layer=rcl, centerline_cfg=world["cfg"])
+    svc.rename("S1", {"St_Name": "Maple", "St_PosTyp": "Avenue"}, keep_alias=False)
+    assert attr(rcl, 1, "FullName") == "Maple Avenue" and attr(rcl, 2, "FullName") == "Maple Avenue"
+    assert attr(addr, a, "FullName") == "Maple Avenue"
+    assert attr(addr, a, "FullAddr") == "151 Maple Avenue Apt 4"
+
+    fid = rcl.add_committed([], [(0, 50), (1609.344, 50)])
+    for name, value in (("St_Name", "Elm"), ("St_PosTyp", "Road"), ("SpeedLimit", 30), ("RoadClass", "Local"),
+                        ("LSt_Name", "ELM"), ("LSt_Typ", "RD")):
+        rcl._feats[fid].setAttribute(rcl.fields().lookupField(name), value)
+    acc = D.centerline_accessor(rcl)
+    D.recalculate("centerline", rcl, acc)
+    assert attr(rcl, fid, "FullName") == "Elm Road" and attr(rcl, fid, "LSt_FullName") == "ELM RD"
+    assert attr(rcl, fid, "TravelTime") == pytest.approx(2.0) and attr(rcl, fid, "Hierarchy") == 6
+
+
+def test_psap_sides_from_the_psap_zone_layer_and_new_fields_are_matched(world):
+    from nena_addressing_and_rcl_tools.core import zones as Z
+    from nena_addressing_and_rcl_tools.core.config import fill_unmapped
+    rcl, cfg = world["rcl"], world["cfg"]
+    rcl.addAttribute(QgsField("PSAP_LEFT", "string"))
+    rcl.addAttribute(QgsField("PSAP_RIGHT", "string"))
+    assert fill_unmapped(cfg, [f.name() for f in rcl.fields()]) == {"PSAP_L": "PSAP_LEFT", "PSAP_R": "PSAP_RIGHT"}
+    assert fill_unmapped(cfg, [f.name() for f in rcl.fields()]) == {}
+    C.save_to_layer(rcl, cfg)
+    psap = _layer("PSAP Boundary", ["DsplayName"])
+    _poly(psap, ["County 911"], -500, 150)
+    _poly(psap, ["City 911"], 150, 500)
+    pcfg = world["pcfg"]
+    pcfg.zones.layers = Z.dump_zones([Z.new_zone(psap.id(), psap.source(), "psap", "DsplayName")])
+    save_project_config(pcfg)
+    ctx = E.AddressContext(pcfg, rcl, cfg)
+    E.attribute_centerline_sides(ctx, [1])
+    assert (attr(rcl, 1, "PSAP_LEFT"), attr(rcl, 1, "PSAP_RIGHT")) == ("County 911", "County 911")

@@ -15,8 +15,9 @@ Plain Python only. The four layers the plugin already edits stay in
 (road type, unit type, address status, road status, address type) and the
 shared domain-values table (counties, communities, ZIP codes, ESNs, …).
 
-Boundary polygons stay the layers you already draw the attribution rules
-from. This plugin does not invent a boundary schema.
+It also adds the zone (boundary) polygon layers of NENA-STA-006 (PSAP,
+provisioning, law, fire, EMS, …, see ``zones.py``) and the check exceptions
+table. The polygons the Sides rules read can be these layers or any others.
 """
 
 import os
@@ -28,6 +29,8 @@ from .addressing.ssap import ACCESS_FIELDS, DRIVEWAY_FIELDS, SSAP_FIELDS
 from .lookups import LOOKUP_SPECS, lookup_field_defs
 from .schema import MANDATORY, OPTIONAL, RCL_FIELDS, FieldDef, auto_map, get_def, normalize_name
 from .template import effective_fields
+from .zones import ZONE_KINDS, zone_field_defs
+from .check_exceptions import FIELDS as EXCEPTION_FIELDS, TABLE as EXCEPTIONS_TABLE
 
 # Plugin link fields kept when a state template replaces the SSAP list.
 ADDRESS_LINK_FIELDS = ("StreetID", "RCL_NGUID", "Access_X", "Access_Y", "Addr_Side")
@@ -46,6 +49,7 @@ class SchemaLayer:
     wkb: str          # None | Point | LineString
     role: str         # project-config role, or "centerline" for the panel layer
     versioned: bool = True
+    default_on: bool = True   # ticked in Create schema
 
 
 SCHEMA_LAYERS: tuple = (
@@ -60,7 +64,13 @@ SCHEMA_LAYERS: tuple = (
 ACCESS_LAYER = SchemaLayer("access", "AccessPoint", "Access points", "Point", "access")
 LOOKUP_LAYERS: tuple = tuple(
     SchemaLayer(key, table, title, "None", role, False) for key, table, title, role in LOOKUP_SPECS)
-EXTRA_LAYERS: tuple = (ACCESS_LAYER,) + LOOKUP_LAYERS
+# Zone polygons, keyed zone_<kind>. Zones usually live in their own database and are
+# only pointed to (Settings, Zones), so they start unticked in Create schema.
+ZONE_SCHEMA_LAYERS: tuple = tuple(
+    SchemaLayer(f"zone_{k.key}", k.table, f"Zones: {k.title}", "MultiPolygon", f"zone_{k.key}", False, False)
+    for k in ZONE_KINDS)
+EXCEPTIONS_LAYER = SchemaLayer("exceptions", EXCEPTIONS_TABLE, "Check exceptions", "None", "exceptions", False)
+EXTRA_LAYERS: tuple = (ACCESS_LAYER,) + LOOKUP_LAYERS + ZONE_SCHEMA_LAYERS + (EXCEPTIONS_LAYER,)
 CREATABLE_LAYERS: tuple = SCHEMA_LAYERS + EXTRA_LAYERS
 
 LAYERS_BY_KEY = {s.key: s for s in CREATABLE_LAYERS}
@@ -199,6 +209,10 @@ def defs_for(key: str, rcl_template: Optional[dict] = None, addr_template: Optio
         return access_defs()
     if key in {spec[0] for spec in LOOKUP_SPECS}:
         return lookup_field_defs(key)
+    if key.startswith("zone_"):
+        return zone_field_defs(key[5:])
+    if key == "exceptions":
+        return list(EXCEPTION_FIELDS)
     raise KeyError(key)
 
 

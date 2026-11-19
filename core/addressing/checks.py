@@ -126,7 +126,7 @@ def address_issues(ctx: AddressContext, check_attribution: bool = True) -> List[
             out.append(Issue(f.id(), ERROR, "ADDR_WRONG_SIDE",
                              f"{num}{suf} is {'even' if num % 2 == 0 else 'odd'} but the {side} side of segment "
                              f"{seg_fid} is {'odd' if par == 'O' else 'even'}", side, seg_fid))
-        if check_attribution and ctx.pcfg.addresses.attribution_rules:
+        if check_attribution and _side_rules(ctx.pcfg):
             community, notes, _updates = community_from_segment(ctx, seg, side, frac)
             for n in notes:
                 code = "ATTRIB_MULTIPLE" if "overlap" in n else "ATTRIB_NO_POLYGON"
@@ -155,7 +155,7 @@ def address_issues(ctx: AddressContext, check_attribution: bool = True) -> List[
 
 
 def centerline_boundary_issues(ctx: AddressContext) -> List[Issue]:
-    if not ctx.pcfg.addresses.attribution_rules:
+    if not _side_rules(ctx.pcfg):
         return []
     _n, crossings = attribute_centerline_sides(ctx, write=False)
     return [Issue(fid, WARNING, "RCL_CROSSES_BOUNDARY",
@@ -164,3 +164,9 @@ def centerline_boundary_issues(ctx: AddressContext) -> List[Issue]:
 
 
 
+
+
+def _side_rules(pcfg):
+    """Settings, Sides rules plus PSAP from the PSAP zone layer (see zones.side_rules)."""
+    from ..zones import side_rules
+    return side_rules(pcfg)

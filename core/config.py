@@ -199,6 +199,24 @@ def _load_section(klass, data):
     return obj
 
 
+def fill_unmapped(cfg: "PluginConfig", layer_field_names) -> Dict[str, str]:
+    """Match NENA fields that have no field yet to a column of the same (or a known alias) name.
+
+    Matched fields and columns already in use are left alone. Returns what was added.
+    """
+    from .schema import auto_map
+    from .template import effective_fields
+    used = {str(v).lower() for v in cfg.mapping.values() if v}
+    added = {}
+    for name, column in auto_map(list(layer_field_names), effective_fields(cfg.template or None)).items():
+        if cfg.mapping.get(name) or not column or column.lower() in used:
+            continue
+        cfg.mapping[name] = column
+        used.add(column.lower())
+        added[name] = column
+    return added
+
+
 # ---------------------------------------------------------------------------
 # QGIS persistence helpers (lazy imports)
 # ---------------------------------------------------------------------------

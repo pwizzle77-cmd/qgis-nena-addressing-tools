@@ -140,6 +140,15 @@ class DisplaySettings:
 
 
 @dataclass
+class ZoneSettings:
+    """Zone (boundary) layers and the check exceptions table. See ``core/zones.py``."""
+
+    layers: List[Dict] = field(default_factory=list)     # ZoneLayer.to_dict() rows
+    exceptions_layer_id: str = ""
+    exceptions_layer_source: str = ""
+
+
+@dataclass
 class StreetTypeSettings:
     """Street types for the name form. ``custom`` False means the built-in NENA/USPS list."""
 
@@ -158,6 +167,7 @@ class ProjectConfig:
     street_types: StreetTypeSettings = field(default_factory=StreetTypeSettings)
     lookups: LookupSettings = field(default_factory=LookupSettings)
     display: DisplaySettings = field(default_factory=DisplaySettings)
+    zones: ZoneSettings = field(default_factory=ZoneSettings)
 
     def to_json(self, indent=None) -> str:
         return json.dumps(asdict(self), indent=indent)
@@ -172,6 +182,7 @@ class ProjectConfig:
         _load_street_types(cfg.street_types, (data or {}).get("street_types"))
         _load(cfg.lookups, (data or {}).get("lookups") or {})
         _load(cfg.display, (data or {}).get("display") or {})
+        _load(cfg.zones, (data or {}).get("zones") or {})
         if not cfg.display.support_layout_chosen:
             cfg.display.hide_support_tables = False
         return cfg

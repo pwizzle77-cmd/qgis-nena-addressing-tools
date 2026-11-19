@@ -148,7 +148,7 @@ class WindowHost(QObject):
             ("addresses", "NenaAddressesWindow", "Addresses", dock.addresses, True),
             ("ranges", "NenaRangesWindow", "Ranges", dock.ranging, True),
             ("validation", "NenaCheckWindow", "Check", dock.validation, True),
-            ("settings", "NenaSettingsWindow", "Settings", dock.settings_root, False),
+            ("settings", "NenaSettingsWindow", "Settings", dock.settings_root, True),
             ("schema", "NenaSchemaWindow", "Schema and import", dock.schema_page, True),
             ("lookups", "NenaLookupsWindow", "Lookup tables", dock.lookups, False),
         )

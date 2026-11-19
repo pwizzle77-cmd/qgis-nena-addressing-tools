@@ -356,6 +356,7 @@ Every button has its name under the icon.
 | **Driveway** | Draws a driveway from the road |
 | **Units** | Places several units that share one house number |
 | **Undo** | Removes the last address you placed |
+| **History** | Shows every saved version of the selected road or address, what each save changed, and rolls it back to an earlier version |
 
 ### Windows
 
@@ -694,6 +695,27 @@ Then use **Calculate sides** (or **Split where the side changes** where the city
 
 **Map markers:** when address points are selected, the map shows where each one meets the road. Blue means OK. Red means the road has moved away from the access point. Hollow grey means the access point was estimated. Nothing is written. Clear the selection and the markers go away.
 
+### Access points for existing addresses
+
+Place address makes an access point for each address it places. Addresses that came from somewhere else (an import, a copy and paste, QGIS's own Add Feature tool) have none, and routing needs one. In the **Addresses** window, under **Access points**, click **Create access points…**. It works on the selected address points, or on all of them when none are selected. The import does the same thing for you when **Create access points for the imported addresses** is ticked.
+
+For each address with no access point:
+
+1. **Where it meets the road.** It uses the first of these that it finds:
+   1. The address's driveway (matched by Site_NGUID), at the end that touches the road.
+   2. The address's **Access_X / Access_Y**. Values far from the address, such as coordinates rounded to a whole degree, are ignored.
+   3. The point on the road nearest the address.
+2. **Which road.** The centerline in the address's RCL_NGUID, when it's near that spot. Otherwise, the nearest centerline.
+3. **Which side.** The side of the road the address point is on. If the point sits right on the road line, its Addr_Side is used.
+4. **The access point** is placed 10 feet straight off the road on that side, the same as Place address. It gets AccessPointID, RCL_NGUID, StreetID, and RoadSide.
+   - Addresses that meet the road at the same spot on the same side share one access point, such as a duplex, or units with the same Access_X / Access_Y.
+   - An existing access point within the snapping tolerance is reused.
+5. **The address** gets the AccessPointID. Access_X / Access_Y, Addr_Side, and RCL_NGUID are filled only where they are empty. Its driveway gets the AccessPointID too.
+
+Addresses already linked to an existing access point are left alone. An address whose AccessPointID points at an access point that doesn't exist gets that access point created with the same id. If the address layer has no AccessPointID field, one is added.
+
+You see a summary before anything is written. The access points and the links go into edit sessions as one undo step each, so save the access point and address layers to keep them. Addresses that couldn't be placed (no road within 1,500 m, or no location at all) are listed with the reason and left selected.
+
 ### Renaming part of a road
 
 If you assign some road pieces to a different street and they already have addresses, a dialog lists those addresses with their new numbers. Keep the old numbers, re-address all of them, or re-address only the ones you tick.
@@ -734,6 +756,31 @@ Only features whose values actually change are edited.
 
 ---
 
+## Calculated fields, routing fields, and legacy names
+
+These fields are part of the road centerline and address schema. To add them to tables you already have, use **NENA ▾ → Schema and import → Update schema…** (they are ticked there). Columns with common other names (PSAP_LEFT, FULL_NAME, TRAVEL_TIME, SURFACE …) are matched automatically.
+
+**Road centerlines**
+
+| Field | What it holds | How it is filled |
+|---|---|---|
+| **FullName** | Full road name ("North Main Street") | Calculated from the name parts on every save, and updated straight away when the master street name is renamed, synced, or assigned |
+| **LSt_PreDir, LSt_Name, LSt_Typ, LSt_PosDir** | NENA legacy street name: the name as it was before NG9-1-1 parsing, as in the MSAG ("N", "MAIN", "ST") | Typed in, or imported |
+| **LSt_FullName** | Full legacy road name ("N MAIN ST") | Calculated from the legacy parts on every save |
+| **PSAP_L, PSAP_R** | The PSAP on each side | Filled like ZIP and ESN (**Settings → Sides**, or **Calculate sides**). With no PSAP rule there, the PSAP zone layer under **Settings → Zones** is used |
+| **Hierarchy** | Routing hierarchy, 1 (interstate / freeway) to 7 (private, service, or trail). Drop-down | Typed in. When empty, it is filled on save from RoadClass: Primary and Ramp 2, Secondary 3, Local and Other 6, Service Drive, Alley, Private, Parking Lot and Vehicular Trail 7. Walkways and trails stay empty |
+| **TravelTime** | Minutes to drive the segment at its SpeedLimit (mph), from its measured length. Used for routing | Calculated on every save and whenever the shape or SpeedLimit changes. Empty when SpeedLimit is empty or 0, so a missing speed is visible instead of guessed |
+| **Surface** | Paved, Concrete, Brick, Gravel, Shell, Dirt, Unknown. Drop-down | New roads start on the list's **Default** (Paved). Edit the list in **Lookup tables → Domain values → Road surfaces** |
+
+**Address points**
+
+| Field | What it holds | How it is filled |
+|---|---|---|
+| **FullName** | Full road name | As before: from the master street name |
+| **FullAddr** | Full address: number prefix, number and suffix, full road name, unit type and unit ("123A North Main Street Apt 4") | Calculated on every save, and updated straight away when the master street name is renamed, synced, or assigned |
+
+Calculated fields are written just before the layer saves, so the version tables store them too. To fill them on all your existing roads and addresses at once, click **Recalculate fields** (Schema and import), then save the layers.
+
 ## When you edit a road
 
 Turn these on or off under **Settings → Editing**.
@@ -772,13 +819,53 @@ The **Results** page lists every problem. Double-click a row to zoom to it. You 
 
 **Address checks** (from the Addresses window) catch numbers outside the road's range, the wrong odd/even side, numbers out of order, duplicates, access points that have moved off the road, missing streets, and ZIP/community/ESN values that don't match the road side.
 
+### Zones (PSAP, provisioning, law, fire, EMS, and other boundaries)
+
+NG9-1-1 routes a call by testing which boundary polygon the location falls in. So zones are polygon layers of their own. Nothing is copied from them onto roads or addresses: the ZIP, MSAG, ESN, and city values on the road sides are still set under **Settings → Sides**.
+
+**Set them up — Settings → Zones.** Zone layers can stay wherever you keep them, such as their own database. Add them to the project, then:
+
+1. Click **Add all from project** to pick up every polygon layer whose name looks like a zone layer (fire, law, sheriff, EMS, PSAP, provisioning, city limits, ESN, county…), or **Add** to list one at a time.
+2. For each layer, check the **Kind** and the **Name field**. The name field is the field that names each zone in messages; DsplayName, ESN, or the city name is picked when the layer has it.
+3. **Split roads at this boundary** is on for every new zone layer. Untick it for a layer whose lines can run down the middle of a road. That layer is still checked for gaps, overlaps, and addresses; it just never splits a road and never reports a road as not split.
+4. Untick any check a layer doesn't need. For example, neighborhoods don't have to cover the whole county, so their gap check starts off. **Ignore gaps / overlaps under** sets how small a sliver may be before it is reported (1 m² by default).
+5. Under **Check exceptions table**, choose a table or click **Create in a GeoPackage…**.
+
+Importing zones is optional. **Import** has **Also import zone layers (optional)**, off by default, for copying boundary polygons into NENA zone tables. **Create schema** can make empty zone tables too; they start unticked.
+
+**Check them — Check → Zones tab → Check zones.**
+
+| Check | What it means |
+|---|---|
+| ZONE_GEOMETRY | A polygon is empty or invalid (crosses itself, bad ring) |
+| ZONE_OVERLAP | Two polygons of the same layer overlap |
+| ZONE_GAP | Part of the provisioning area is in no zone of that layer (a hole, when there is no provisioning boundary) |
+| ZONE_OUTSIDE | A polygon reaches outside the provisioning boundary |
+| ZONE_FIELDS_MISSING / ZONE_FIELD_EMPTY | A required NENA field is missing from the layer, or empty |
+| ZONE_NGUID_DUPLICATE | Two polygons share an ES_NGUID (or PB_NGUID) |
+| ZONE_URN | ServiceURN is not right for the kind of zone. Both `urn:emergency:service:responder.fire` and the older `urn:nena:service:responder.fire` forms pass |
+| ESZ_MIXED | An ESN zone lies in more than one fire, law, or EMS zone |
+| ZONE_ROAD_NOT_SPLIT | A road crosses a zone line (where roads are split) partway along. A road that runs along the line is not reported, because its two sides are simply in different zones |
+| ROAD_OUTSIDE_PROVISIONING | Part of a road is outside the provisioning boundary |
+| ADDR_ZONE_ACCESS | An address and its access point are in different zones |
+| ADDR_ZONE_ROAD_SIDE | An address with no access point is in a different zone from the road beside it |
+| ADDR_NO_ZONE / ADDR_OUTSIDE_PROVISIONING | An address is in no zone of a layer that should cover everything, or outside the provisioning boundary |
+
+Double-click a result to zoom to it. **Select** selects the features in the results, on their own layers.
+
+**Exceptions.** Some results are correct, such as a bridge over a district line that the agencies agreed on, or a long driveway that crosses into the next fire district. Select them, then click **Accept as exception…** (or right-click). Give a reason, and optionally an end date. Each exception is stored in the Check exceptions table with who entered it and when. Your NENA layers get no extra fields.
+
+- An exception covers one check on one feature. Every other check still runs on that feature. **Only for this kind of zone** (on by default) keeps it to the zone layer kind it was made for.
+- Accepted results are hidden. Tick **Show exceptions** to see them, greyed out with their reason, and **Remove exception** to bring one back.
+- If the feature is edited after the exception was made (its DateUpdate is newer), the result shows again as *Excused before the last edit*, so an old excuse doesn't hide a new problem. Accept it again if it is still fine.
+
 **MSAG comparison** (**Check → Compare to MSAG**; the extract and its columns are on **Settings → Checks**): load your telephone company's MSAG into the project, pick its columns, and compare. `MAIN ST` matches `Main Street`. MSAG rows that aren't on your map are listed too.
 
 ---
 
 ## Settings
 
-Open **NENA ▾ → Settings**, or the **Settings…** button on any tool window, which opens its page. Everything you set once is here, one page per subject in the list on the left; the tool windows keep only what you do. **Settings save automatically.**
+Open **NENA ▾ → Settings**, or the **Settings…** button on any tool window, which opens its page. Everything you set once is here, one page per subject in the list on the left; the tool windows keep only what you do. **Settings save automatically.** The road settings (field matching, ranging, what happens while you edit, checks) are stored on the centerline layer named at the top of the Settings window, and kept when you save the project. Clicking another line layer in the Layers panel (railroads, a boundary drawn as lines) doesn't move the plugin off a road layer that has settings; pick a different road layer in the Centerline picker instead.
 
 | Page | What you set |
 |---|---|
@@ -832,6 +919,29 @@ ZIP, MSAG, and city boundary polygons are not created here. Use the ones you alr
 
 **Replace tables that already exist** overwrites tables with the same names. Other tables are untouched.
 
+### Update the schema of tables you already have
+
+New versions of the plugin add fields (such as AccessPointID on address points) and tables (access points, lookup lists, check exceptions). **Update schema…** brings the tables your project already uses up to date and keeps all your data.
+
+1. Open **NENA ▾ → Schema and import** and click **Update schema…**.
+2. A list shows, for each table the project uses, the fields it is missing. It covers road centerlines, master street names, address points, driveways, access points, lookup lists, version tables, check exceptions, and zone layers. Tables the plugin expects but your project has none of are listed under **New tables**.
+3. What is ticked to start with:
+   - fields NENA requires, and fields the plugin reads or writes;
+   - every missing field on the plugin's own tables (street names, driveways, access points, lookup lists, exceptions);
+   - on version tables, every field the live layer has, so versions can store it.
+
+   Optional NENA fields, and fields on zone layers (which often follow a state or regional format), start unticked. Tick or untick anything.
+4. Click **Update**. Only the ticked fields are added, as empty columns, and saved. Nothing is removed, renamed, retyped, or replaced.
+
+Good to know:
+
+- A table with unsaved edits is skipped, so your edits aren't saved by accident. Save or discard them and run it again.
+- New tables go into the GeoPackage or File Geodatabase your road centerlines are in. A table of that name already in the file is used as it is. When the roads are in a database (PostgreSQL, SQL Server…), make new tables with **Create schema** and tick only those.
+- Shapefile column names can't be longer than 10 characters, so longer names start unticked.
+- Make a copy of the data first if you can.
+
+**Create schema** into an existing GeoPackage or File Geodatabase writes only the tables you tick and leaves the rest of the file alone. A ticked table that already exists stops the run, unless **Replace tables that already exist** is on. That option empties those tables, so leave it off when you only want to add new ones.
+
 ### Import your existing data
 
 **Import** copies features from layers in your project into the new tables.
@@ -840,6 +950,7 @@ ZIP, MSAG, and city boundary polygons are not created here. Use the ones you alr
 - You can import only the selected features.
 - Geometry is reprojected for you.
 - Required fields that couldn't be matched are reported.
+- **Create access points for the imported addresses** (on by default) gives every imported address an access point, which routing needs. See [Access points for existing addresses](#access-points-for-existing-addresses). The access points and the address links are saved with the import. Choose or create the access point layer first (**Create schema** makes one).
 
 ### Who made the edit
 
@@ -860,7 +971,19 @@ Click **Versions** to create history tables, then turn on **Track changes** (**S
 | A change | The new feature, plus the old and new values of what changed (including shape) |
 | A delete | The feature that was removed |
 
-To see one feature's history, filter the history table by its ID and sort by version. Drop-down lists aren't tracked. Turn **Track changes** off at any time; the history tables stay.
+Drop-down lists aren't tracked. Turn **Track changes** off at any time; the history tables stay.
+
+#### See a feature's history and roll it back
+
+Select a road or address on the map (a street name, driveway, or access point works too) and click **History** on the toolbar (also in the **NENA Addressing and RCL Tools** menu under *History*).
+
+- **Feature** lists what is selected. With **Follow map selection** ticked, the window switches as you select something else.
+- The top list has every saved version, newest first: version number, when, who, added/changed/deleted, and which fields changed. Double-click a version to zoom to its shape.
+- **What changed** shows each field the save changed, its value before (red) and after (green). This is read from the old and new values stored with the version, so you never have to read the JSON yourself. A changed shape is listed as *Shape*, and the version's shape is drawn in orange on the map.
+- **All fields** shows the whole feature as it was in that version next to the feature now, with the differences highlighted. Tick *Only fields that differ* to see just those.
+- **Stored JSON** shows the stored old and new values, formatted, if you want the raw record.
+
+To undo a change, pick the version you want to go back to and click **Roll back to this version…**. A confirmation lists each field that will change (now → will become) and lets you choose whether to restore the shape too. WhoEntered, LastUpdatedBy, and DateUpdate are left to the save. If the layer is not being edited, the roll back is saved right away and, with **Track changes** on, recorded as a new version, so a roll back can itself be rolled back. If you are in the middle of editing, the roll back goes into your edit session (Undo reverses it) and is kept when you save.
 
 ---
 

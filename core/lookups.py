@@ -50,10 +50,11 @@ DOMAINS_KEY = "domains"
 # county …) are left out on purpose: a default there would hide a missing
 # boundary polygon and give the address the wrong value.
 DEFAULTABLE_TABLES = ("address_status", "address_type", "road_status")
-DEFAULTABLE_DOMAINS = ("RoadClass", "Placement", "DiscrpAgID")
+DEFAULTABLE_DOMAINS = ("RoadClass", "Placement", "DiscrpAgID", "Surface")
 
 # Default rows ticked in new tables, and in older tables the first time they get the Default column.
-SEED_DEFAULTS = {"address_status": "ACT", "road_status": "ACT", "RoadClass": "Local", "Placement": "Structure"}
+SEED_DEFAULTS = {"address_status": "ACT", "road_status": "ACT", "RoadClass": "Local", "Placement": "Structure",
+                 "Surface": "Paved"}
 
 # key, table, title, project-config role
 TABLE_SPECS = (
@@ -81,6 +82,7 @@ DOMAINS = (
     ("Placement", "Placement methods", ""),
     ("DiscrpAgID", "Discrepancy agencies", ""),
     ("PreSep", "Street name separators", ""),
+    ("Surface", "Road surfaces", ""),
 )
 DOMAIN_NAMES = tuple(d[0] for d in DOMAINS)
 DOMAIN_TITLE = {d[0]: d[1] for d in DOMAINS}
@@ -93,7 +95,10 @@ _DOMAIN_SEEDS = {
     # NENA placement method registry
     "Placement": ("Structure", "Site", "Property Access", "Parcel", "Geocoding", "Unknown"),
     "PreSep": ("of", "of the", "at", "de", "del", "de la", "de las", "de los", "des"),
+    "Surface": ("Paved", "Concrete", "Brick", "Gravel", "Shell", "Dirt", "Unknown"),
 }
+# Lists added after the domain table first shipped: a table without any rows for them gets their seeds.
+LATER_SEEDED_DOMAINS = ("Surface",)
 
 # ---------------------------------------------------------------------------
 # Fixed NENA lists (value maps, no table)
@@ -120,6 +125,10 @@ _STATES = (
     ("VI", "U.S. Virgin Islands"),
 )
 STATES = tuple((f"{name} ({code})", code) for code, name in _STATES)
+# Routing hierarchy, 1 = fastest roads. Empty Hierarchy is filled from RoadClass on save (core/derived.py).
+HIERARCHY = (("1 – Interstate / freeway", "1"), ("2 – Principal arterial (US highway)", "2"),
+             ("3 – Minor arterial (state road)", "3"), ("4 – Major collector", "4"),
+             ("5 – Minor collector", "5"), ("6 – Local road", "6"), ("7 – Private, service, or trail", "7"))
 
 FIXED_LISTS = {
     "directional": ("Directionals", DIRECTIONALS),
@@ -128,6 +137,7 @@ FIXED_LISTS = {
     "yes_no": ("Yes / no", YES_NO),
     "country": ("Countries", COUNTRIES),
     "state": ("States", STATES),
+    "hierarchy": ("Routing hierarchy", HIERARCHY),
 }
 
 # QGIS stores "no value" in a value map under this key.
@@ -197,6 +207,8 @@ BINDINGS: Tuple[Binding, ...] = (
     *_sides("centerline", "ESN", "domain", "ESN"),
     *_sides("centerline", "MSAGComm", "domain", "MSAGComm"),
     Binding("centerline", "RoadClass", "domain", "RoadClass"),
+    Binding("centerline", "Surface", "domain", "Surface"),
+    Binding("centerline", "Hierarchy", "map", "hierarchy"),
     Binding("centerline", "DiscrpAgID", "domain", "DiscrpAgID"),
     # master street names
     *(Binding("master", f, k, s, c) for f, k, s, c in _NAME_BINDINGS),
@@ -589,6 +601,8 @@ def sync_defaults(pcfg, centerline=None) -> int:
     for key in DEFAULTABLE_TABLES + (DOMAINS_KEY,):
         with contextlib.suppress(ConfigError):
             ensure_default_column(lookup_layer(pcfg, key), key, wanted)
+    with contextlib.suppress(ConfigError):
+        add_later_domain_seeds(lookup_layer(pcfg, DOMAINS_KEY))
     return apply_layer_defaults(pcfg, centerline)
 
 
@@ -912,6 +926,32 @@ def add_rows(layer, rows: Sequence[dict]) -> int:
     layer.endEditCommand()
     save_edits(layer, started)
     return added
+
+
+def later_domain_rows(existing: Iterable[dict]) -> List[dict]:
+    """Seed rows for lists added later (Surface) that an existing domain table has no rows for."""
+    have = {str(row.get("Domain") or "") for row in existing}
+    rows = []
+    for name in LATER_SEEDED_DOMAINS:
+        if name in have:
+            continue
+        for row in _rows([(v, v) for v in _DOMAIN_SEEDS[name]], name):
+            if SEED_DEFAULTS.get(name, "").upper() == str(row["Code"]).upper():
+                row["IsDefault"] = "Y"
+            rows.append(row)
+    return rows
+
+
+def add_later_domain_seeds(layer) -> int:
+    """Give an existing domain table the seed rows of lists it does not have yet. Saved at once."""
+    if layer is None:
+        return 0
+    rows = later_domain_rows(read_rows(layer))
+    if not rows:
+        return 0
+    if layer.isEditable() and layer.isModified():
+        return 0                      # do not save someone's pending edits with these rows
+    return add_rows(layer, rows)
 
 
 def seed_layer(layer, key: str) -> int:
