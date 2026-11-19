@@ -39,6 +39,21 @@ def _private_flag():
     return flags.Private
 
 
+def _value(flags):
+    return flags.value if hasattr(flags, "value") else int(flags)
+
+
+def _clear_private(layer) -> None:
+    """Take the private flag off. In PyQt6 ``flags & ~flag`` is a plain int,
+    which QgsMapLayer.setFlags refuses, so the flags type is rebuilt."""
+    flags, flag = layer.flags(), _private_flag()
+    new = _value(flags) & ~_value(flag)
+    try:
+        layer.setFlags(type(flags)(new))
+    except (TypeError, ValueError):
+        layer.setFlags(new)
+
+
 def is_hidden(layer) -> bool:
     return bool(layer is not None and layer.flags() & _private_flag())
 
@@ -164,7 +179,7 @@ def arrange_support_layers(pcfg, project=None) -> int:
         for lyr in layers:
             was_hidden = is_hidden(lyr)
             if was_hidden:
-                lyr.setFlags(lyr.flags() & ~flag)
+                _clear_private(lyr)
             moved = _move(lyr, root.findLayer(lyr.id()), target)
             changed += int(moved or was_hidden)
         # keep the subgroups below the layers people edit
@@ -198,7 +213,7 @@ def set_hidden(layer, hidden: bool, project=None) -> bool:
         return True
     if not is_hidden(layer):
         return False
-    layer.setFlags(layer.flags() & ~flag)
+    _clear_private(layer)
     if root.findLayer(layer.id()) is None:
         _child_group(root, GROUP_NAME).addLayer(layer).setItemVisibilityChecked(False)
     return True

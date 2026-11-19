@@ -101,7 +101,11 @@ class StreetTableView(QTableView):
         self.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.setSortingEnabled(True)
         self.sortByColumn(0, Qt.SortOrder.AscendingOrder)
-        self.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        header = self.horizontalHeader()
+        header.setMinimumSectionSize(40)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)       # the name takes what is left
+        for column in range(1, len(COLUMNS)):
+            header.setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
 
     def minimumSizeHint(self):  # noqa: N802
         return QSize(1, self._floor)
