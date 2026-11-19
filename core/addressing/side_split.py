@@ -18,8 +18,8 @@ from ..layer_access import ConfigError, FieldAccessor, apply_changes, ensure_edi
 from ..project_config import ProjectConfig, layer_for
 from ..split_ops import apply_piece_split
 from ..streets import names as N
-from .engine import (AddressContext, StreetMeasure, attribution_values, community_from_segment,
-                     offset_point, stored_access, _pt)
+from .engine import (AddressContext, StreetMeasure, community_from_segment, boundary_side_values,
+                     stored_access, _pt)
 from .numbering import side_of
 from .ssap import COMMUNITY_FIELDS
 
@@ -51,7 +51,7 @@ def split_where_side_changes(layer: QgsVectorLayer, cfg: PluginConfig, pcfg: Pro
     """
     report = {"split": 0, "pieces": 0, "addresses": 0, "skipped": []}
     if not (pcfg.addresses.attribution_rules or []):
-        raise ConfigError("Choose the ZIP, MSAG, and ESN polygon layers under Settings, Sides first.")
+        raise ConfigError("Choose the ZIP, MSAG, ESN, or city limits polygon layers under Settings, Sides first.")
     ctx = _SampleCtx(layer, cfg, pcfg)
     off = gu.metres_to_layer_units(3.0, layer.crs())
     req = QgsFeatureRequest() if not fids else QgsFeatureRequest().setFilterFids(list(fids))
@@ -99,10 +99,7 @@ def split_where_side_changes(layer: QgsVectorLayer, cfg: PluginConfig, pcfg: Pro
 
 
 def _sample(ctx, geom, side: str, fraction: float, off: float) -> dict:
-    pt = offset_point(geom, fraction, side, off)
-    if pt is None:
-        return {}
-    return attribution_values(ctx, pt)[0]
+    return boundary_side_values(ctx, geom, fraction, side, off)[0]
 
 
 def _refine(ctx, geom, side, off, t0, t1, left, right, depth=10) -> float:
@@ -141,8 +138,8 @@ def _side_values(ctx, geom, off: float) -> Dict[str, str]:
         found = _sample(ctx, geom, side, 0.5, off)
         for key, value in found.items():
             field_name = COMMUNITY_FIELDS[key][1 if side == "L" else 2]
-            if value and ctx.rcl_acc.has(field_name):
-                vals[field_name] = value
+            if ctx.rcl_acc.has(field_name):
+                vals[field_name] = value or None   # blank clears a value the piece inherited
     return vals
 
 

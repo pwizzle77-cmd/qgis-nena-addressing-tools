@@ -11,10 +11,11 @@ about=Day-to-day 911 addressing in QGIS, following the NENA NG9-1-1 layout for r
     - Drop-down lists for street types, communities, ZIP codes, ESNs, and other fields, so values are entered the same way every time.
     - Check for range gaps, overlaps, wrong odd/even sides, missing values, and MSAG mismatches before you submit.
     Works with GeoPackage, file geodatabase, shapefile, PostgreSQL/PostGIS, SQL Server, and other QGIS data sources. Every edit is undoable. Pure PyQGIS, no extra installs. Runs on QGIS 3.34 or newer, including QGIS 4.
-version=3.6.13
+version=3.6.14
 author=Charles
 email=pwizzle77@gmail.com
-changelog=3.6.13 - New address points and driveways always get a Site_NGUID / DW_NGUID: with no agency identifier set, they take the agency and format the existing NGUIDs use (address points, driveways, the road, centerlines, or DiscrpAgID); a message says when there is none. Fill empty NGUIDs also fills (and de-duplicates) Site_NGUID and DW_NGUID.
+changelog=3.6.14 - City limits fill IncMuni on each side of the road (Unincorporated outside); optional unincorporated community layer fills UnincCom outside the city only. Each side is checked out to a set distance so limits drawn on the right-of-way line land on the correct side.
+    3.6.13 - New address points and driveways always get a Site_NGUID / DW_NGUID: with no agency identifier set, they take the agency and format the existing NGUIDs use (address points, driveways, the road, centerlines, or DiscrpAgID); a message says when there is none. Fill empty NGUIDs also fills (and de-duplicates) Site_NGUID and DW_NGUID.
     3.6.12 - Split roads always get their own RCL_NGUID: when no agency identifier is set, it comes from the original road's NGUID (or the layer's existing NGUIDs, same format); a piece never keeps the original's id, and a message says when there is no agency to use. Fill empty NGUIDs also replaces duplicated ones and works without an agency identifier when the layer has NGUIDs.
     3.6.11 - Version and lookup tables are hidden from the Layers panel when created (still loaded and updated). New NENA menu option: Hide version and lookup tables.
     3.6.10 - Centerline picker leaves out version tables, driveways, and the address, access-point, and street-name layers, and opens on the project's centerline. Split re-ranging no longer comes out a little too high: with distance addressing the split falls where the house numbers are, and the Addresses window's address points anchor the split when none are set on Ranges, Method.

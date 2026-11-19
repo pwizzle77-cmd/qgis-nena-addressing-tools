@@ -3,7 +3,7 @@
 
 from qgis.gui import QgsFieldComboBox, QgsMapLayerComboBox
 from qgis.PyQt.QtCore import Qt, pyqtSignal
-from qgis.PyQt.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QFormLayout, QGridLayout,
+from qgis.PyQt.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleSpinBox, QFormLayout, QGridLayout,
                                  QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMenu,
                                  QPushButton, QTableWidgetItem, QVBoxLayout, QWidget)
 
@@ -22,6 +22,12 @@ except AttributeError:  # pragma: no cover
     _POLY = QgsMapLayerProxyModel.PolygonLayer
 
 REQ_LABEL = {MANDATORY: "M", CONDITIONAL: "C"}
+
+# City limits fill IncMuni; outside them the side gets OUTSIDE_DEFAULT and
+# the unincorporated community polygon (optional) fills UnincCom.
+CITY_KEY, UNINC_KEY = "IncMuni", "UnincCom"
+OUTSIDE_DEFAULT = "Unincorporated"
+CITY_DEPTH_DEFAULT_M = 40.0
 
 
 class MappingTab(QWidget):
@@ -143,7 +149,29 @@ class MappingTab(QWidget):
             form.addRow(label, row)
             self._boundary[key] = (lcb, fcb)
         v.addLayout(form)
-        v.addWidget(hint("Postal community, municipality, and county use the same left and right fields."))
+
+        v.addWidget(hint("<b>City limits</b> fill <b>IncMuni</b> on each side. A side outside every city gets the "
+                         "outside value, and the unincorporated community polygon (optional) fills "
+                         "<b>UnincCom</b> there. Where the limits run along the road, each side gets its own value."))
+        cform = QFormLayout()
+        self.city_layer, self.city_field = self._layer_field_row(cform, "City limits")
+        self.ed_outside = QLineEdit(OUTSIDE_DEFAULT)
+        self.ed_outside.setToolTip("IncMuni written on a side that is not inside any city limits polygon. "
+                                   "NENA uses \"Unincorporated\".")
+        cform.addRow("Outside city limits", self.ed_outside)
+        self.sp_depth = QDoubleSpinBox()
+        self.sp_depth.setRange(3.0, 500.0)
+        self.sp_depth.setDecimals(0)
+        self.sp_depth.setSuffix(" m")
+        self.sp_depth.setValue(CITY_DEPTH_DEFAULT_M)
+        self.sp_depth.setToolTip("How far off the road to look. Limits are often drawn on the right-of-way line, "
+                                 "not the centerline, so each side is checked at several points out to this "
+                                 "distance and the majority wins. Use a bit more than your widest right-of-way "
+                                 "(40 m is about 130 ft).")
+        cform.addRow("Look out from road", self.sp_depth)
+        self.uninc_layer, self.uninc_field = self._layer_field_row(cform, "Unincorporated community")
+        v.addLayout(cform)
+        v.addWidget(hint("Postal community, neighborhood, and county use the same left and right fields."))
         self.tbl_rules = BoundedTable(0, 3, min_height=110, max_height=200)
         self.tbl_rules.setHorizontalHeaderLabels(["Polygon layer", "Copy field", "Into"])
         self.tbl_rules.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
@@ -205,6 +233,22 @@ class MappingTab(QWidget):
         dv.addLayout(row)
         self.defaults_group = g
         self._build_rows()
+
+    def _layer_field_row(self, form, label):
+        lcb = QgsMapLayerComboBox()
+        lcb.setFilters(_POLY)
+        lcb.setAllowEmptyLayer(True)
+        lcb.setLayer(None)
+        fcb = QgsFieldComboBox()
+        lcb.layerChanged.connect(fcb.setLayer)
+        row = QWidget()
+        h = QHBoxLayout(row)
+        h.setContentsMargins(0, 0, 0, 0)
+        h.addWidget(lcb, 2)
+        h.addWidget(QLabel("Field"))
+        h.addWidget(fcb, 1)
+        form.addRow(label, row)
+        return lcb, fcb
 
     def _one_editor(self, name, domain):
         widget = self._domain_or_text(domain)
@@ -307,7 +351,7 @@ class MappingTab(QWidget):
         if rule.get("source_field"):
             fcb.setField(rule["source_field"])
         tcb = QComboBox()
-        primary = {key for key, _label in PRIMARY_BOUNDARIES}
+        primary = {key for key, _label in PRIMARY_BOUNDARIES} | {CITY_KEY, UNINC_KEY}
         for key, (afield, lf, rf) in COMMUNITY_FIELDS.items():
             if key in primary:
                 continue
@@ -321,12 +365,28 @@ class MappingTab(QWidget):
         """Show the saved polygon layers that fill the centerline's left and right fields."""
         self.tbl_rules.setRowCount(0)
         primary = {}
+        special = set(self._boundary) | {CITY_KEY, UNINC_KEY}
         for rule in rules or []:
             target = rule.get("target")
-            if target in self._boundary and target not in primary:
+            if target in special and target not in primary:
                 primary[target] = rule
-            elif target not in self._boundary:
+            elif target not in special:
                 self._add_rule(rule)
+        for key, lcb, fcb in ((CITY_KEY, self.city_layer, self.city_field),
+                              (UNINC_KEY, self.uninc_layer, self.uninc_field)):
+            rule = primary.get(key) or {}
+            lyr = resolve_layer(rule.get("layer_id", ""), rule.get("layer_source", "")) if rule else None
+            lcb.setLayer(lyr)
+            fcb.setLayer(lyr)
+            if rule.get("source_field"):
+                fcb.setField(rule["source_field"])
+        city = primary.get(CITY_KEY) or {}
+        outside = city.get("outside_value")
+        self.ed_outside.setText(OUTSIDE_DEFAULT if outside is None else str(outside))
+        try:
+            self.sp_depth.setValue(float(city.get("depth_m") or CITY_DEPTH_DEFAULT_M))
+        except (TypeError, ValueError):
+            self.sp_depth.setValue(CITY_DEPTH_DEFAULT_M)
         for key, (lcb, fcb) in self._boundary.items():
             rule = primary.get(key) or {}
             lyr = resolve_layer(rule.get("layer_id", ""), rule.get("layer_source", "")) if rule else None
@@ -343,11 +403,24 @@ class MappingTab(QWidget):
             if lyr is None or not fld:
                 continue
             rules.append({"layer_id": lyr.id(), "layer_source": lyr.source(), "source_field": fld, "target": key})
+        lyr, fld = self.city_layer.currentLayer(), self.city_field.currentField()
+        city_set = lyr is not None and bool(fld)
+        if city_set:
+            rules.append({"layer_id": lyr.id(), "layer_source": lyr.source(), "source_field": fld,
+                          "target": CITY_KEY, "outside_value": self.ed_outside.text().strip(),
+                          "depth_m": float(self.sp_depth.value())})
+        lyr, fld = self.uninc_layer.currentLayer(), self.uninc_field.currentField()
+        if lyr is not None and fld:
+            rule = {"layer_id": lyr.id(), "layer_source": lyr.source(), "source_field": fld,
+                    "target": UNINC_KEY, "optional": True, "depth_m": float(self.sp_depth.value())}
+            if city_set:
+                rule["outside_of"] = CITY_KEY
+            rules.append(rule)
         for r in range(self.tbl_rules.rowCount()):
             lyr = self.tbl_rules.cellWidget(r, 0).currentLayer()
             fld = self.tbl_rules.cellWidget(r, 1).currentField()
             target = self.tbl_rules.cellWidget(r, 2).currentData()
-            if lyr is None or not fld or target in self._boundary:
+            if lyr is None or not fld or target in self._boundary or target in (CITY_KEY, UNINC_KEY):
                 continue
             rules.append({"layer_id": lyr.id(), "layer_source": lyr.source(), "source_field": fld,
                           "target": target})

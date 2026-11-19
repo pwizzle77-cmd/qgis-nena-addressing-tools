@@ -597,8 +597,7 @@ def community_from_segment(ctx: AddressContext, feat, side: str, fraction: float
         off = gu.metres_to_layer_units(offset_m, ctx.rcl.crs())
         t = max(0.02, min(0.98, 0.5 if fraction is None else fraction))
         for s in ("L", "R"):
-            pt = offset_point(feat.geometry(), t, s, off)
-            samples[s] = attribution_values(ctx, pt) if pt is not None else ({}, [])
+            samples[s] = boundary_side_values(ctx, feat.geometry(), t, s, off)
     community: Dict[str, str] = {}
     updates: Dict[str, str] = {}
     needed = set()
@@ -633,30 +632,110 @@ def _stamp_centerline_side(ctx: AddressContext, plan: AddressPlan) -> None:
 def attribution_values(ctx: AddressContext, pt_rcl: QgsPointXY) -> Tuple[Dict[str, str], List[str]]:
     """Evaluate the boundary rules at a point (centerline CRS)."""
     out, notes = {}, []
-    for rule in ctx.pcfg.addresses.attribution_rules:
-        lyr = layer_for_rule(rule)
-        if lyr is None:
-            notes.append(f"Boundary layer for {rule.get('target')} not found")
-            continue
-        idx = lyr.fields().lookupField(rule.get("source_field", ""))
-        if idx < 0:
-            notes.append(f"Field {rule.get('source_field')} not on {lyr.name()}")
-            continue
-        p = _xf(ctx.rcl.crs(), lyr.crs()).transform(pt_rcl)
-        pg = QgsGeometry.fromPointXY(p)
-        vals = []
-        for f in lyr.getFeatures(QgsFeatureRequest().setFilterRect(pg.boundingBox().buffered(1e-9))):
-            if f.hasGeometry() and f.geometry().contains(pg):
-                vals.append(py_value(f.attribute(idx)))
-        target = rule.get("target", "")
-        if not vals:
-            notes.append(f"No {lyr.name()} polygon here ({target})")
-        elif len(set(map(str, vals))) > 1:
-            notes.append(f"Several {lyr.name()} polygons overlap here ({target})")
-        else:
-            if vals[0] not in (None, ""):
-                out[target] = str(vals[0])
+    for rule in ctx.pcfg.addresses.attribution_rules or []:
+        value, note = _rule_value(ctx, rule, pt_rcl)
+        if note:
+            notes.append(note)
+        if value not in (None, ""):
+            out[rule.get("target", "")] = value
+    _apply_outside_only(ctx, out)
     return out, notes
+
+
+# A boundary that runs along the road (city limits) is often drawn on the
+# right-of-way line, not the centerline. A point 3 m off the road then lands
+# on the wrong side, so these rules vote over points spread out to depth_m.
+_DEPTH_SAMPLES = 5
+
+
+def boundary_side_values(ctx, geom, fraction: float, side: str, offset: float) -> Tuple[Dict[str, str], List[str]]:
+    """
+    Every boundary rule for one side of a line at `fraction`.
+
+    A rule with ``depth_m`` samples several points from `offset` out to that
+    depth and keeps the value most of them agree on; the nearest point breaks
+    a tie. Other rules use the single point `offset` off the line.
+    """
+    out, notes = {}, []
+    for rule in ctx.pcfg.addresses.attribution_rules or []:
+        votes, first_note = [], None
+        for dist in _rule_depths(ctx, rule, offset):
+            pt = offset_point(geom, fraction, side, dist)
+            if pt is None:
+                continue
+            value, note = _rule_value(ctx, rule, pt)
+            if note and first_note is None:
+                first_note = note
+            if value is not None:
+                votes.append(value)
+        if votes:
+            best = max(votes, key=lambda v: (votes.count(v), -votes.index(v)))
+            if best != "":
+                out[rule.get("target", "")] = best
+        elif first_note:
+            notes.append(first_note)
+    _apply_outside_only(ctx, out)
+    return out, notes
+
+
+def _rule_depths(ctx, rule: dict, offset: float) -> List[float]:
+    try:
+        depth_m = float(rule.get("depth_m") or 0)
+    except (TypeError, ValueError):
+        depth_m = 0.0
+    deep = gu.metres_to_layer_units(depth_m, ctx.rcl.crs()) if depth_m > 0 else 0.0
+    if deep <= offset:
+        return [offset]
+    step = (deep - offset) / (_DEPTH_SAMPLES - 1)
+    return [offset + i * step for i in range(_DEPTH_SAMPLES)]
+
+
+def _rule_value(ctx, rule: dict, pt_rcl: QgsPointXY) -> Tuple[Optional[str], Optional[str]]:
+    """
+    One rule at one point: (value, note). value is None when the point
+    can't be decided (layer missing, overlap). Outside every polygon gives
+    the rule's ``outside_value`` (e.g. "Unincorporated") when it has one.
+    """
+    target = rule.get("target", "")
+    optional = bool(rule.get("optional"))
+    lyr = layer_for_rule(rule)
+    if lyr is None:
+        return None, f"Boundary layer for {target} not found"
+    idx = lyr.fields().lookupField(rule.get("source_field", ""))
+    if idx < 0:
+        return None, f"Field {rule.get('source_field')} not on {lyr.name()}"
+    p = _xf(ctx.rcl.crs(), lyr.crs()).transform(pt_rcl)
+    pg = QgsGeometry.fromPointXY(p)
+    vals = []
+    for f in lyr.getFeatures(QgsFeatureRequest().setFilterRect(pg.boundingBox().buffered(1e-9))):
+        if f.hasGeometry() and f.geometry().contains(pg):
+            vals.append(py_value(f.attribute(idx)))
+    if not vals:
+        outside = rule.get("outside_value")
+        if outside is not None:
+            return str(outside), None
+        return None, (None if optional else f"No {lyr.name()} polygon here ({target})")
+    if len(set(map(str, vals))) > 1:
+        return None, f"Several {lyr.name()} polygons overlap here ({target})"
+    return ("" if vals[0] in (None, "") else str(vals[0])), None
+
+
+def _apply_outside_only(ctx, out: Dict[str, str]) -> None:
+    """
+    A rule marked ``outside_of`` (unincorporated community) only applies
+    where that other rule gave its outside value; inside a city it is blank.
+    """
+    rules = ctx.pcfg.addresses.attribution_rules or []
+    by_target = {r.get("target"): r for r in rules}
+    for rule in rules:
+        parent_key = rule.get("outside_of")
+        if not parent_key:
+            continue
+        parent = by_target.get(parent_key)
+        if parent is None or parent_key not in out:
+            continue
+        if out[parent_key] != str(parent.get("outside_value") or ""):
+            out[rule.get("target", "")] = ""
 
 
 def layer_for_rule(rule: dict):
@@ -1165,13 +1244,12 @@ def attribute_centerline_sides(ctx: AddressContext, fids: Optional[Sequence[Hash
         for side in ("L", "R"):
             samples = []
             for t in (0.1, 0.5, 0.9):
-                pt = offset_point(g, t, side, off)
-                samples.append(attribution_values(ctx, pt)[0] if pt is not None else {})
+                samples.append(boundary_side_values(ctx, g, t, side, off)[0])
             mid = samples[1]
             for key, value in mid.items():
                 fld = COMMUNITY_FIELDS[key][1 if side == "L" else 2]
                 if ctx.rcl_acc.has(fld):
-                    vals[fld] = value
+                    vals[fld] = value or None
             if any(s != mid for s in samples):
                 crossings.append((f.id(), side))
         if vals:
