@@ -618,8 +618,7 @@ def fill_empty_from_lookups(pcfg, role: str, layer, fids=None) -> int:
     started = ensure_editable(layer)
     layer.beginEditCommand("NENA: fill empty fields from lookup defaults")
     for fid, vals in changes.items():
-        for index, code in vals.items():
-            layer.changeAttributeValue(fid, index, code)
+        layer.changeAttributeValues(fid, vals)
     layer.endEditCommand()
     if started:
         save_edits(layer, started)

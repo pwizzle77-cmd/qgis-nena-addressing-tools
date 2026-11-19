@@ -34,21 +34,38 @@ def empty_required_fields(acc, feature) -> List[str]:
     return out
 
 
+def empty_fields_message(empty, fillable) -> str:
+    """Say which empty fields Fill empty fields can fix and which need a default first."""
+    can = [n for n in empty if n in fillable]
+    cannot = [n for n in empty if n not in fillable]
+    bits = []
+    if can:
+        bits.append(", ".join(can) + " (Fill empty fields gives them the lookup defaults)")
+    if cannot:
+        bits.append(", ".join(cannot) + " (no default: tick one in Lookup tables, or enter the values)")
+    return "Empty: " + "; ".join(bits)
+
+
 def address_issues(ctx: AddressContext, check_attribution: bool = True) -> List[Issue]:
     acc = ctx.addr_acc
     out: List[Issue] = []
     measures: Dict[str, StreetMeasure] = {}
+    segments: Dict = {}                      # centerline features already read, by id
     seen = defaultdict(list)
     per_side = defaultdict(list)            # (street, side) -> [(distance, number, fid)]
     access_tol = ctx.tol * 4
-    for f in ctx.addr.getFeatures():
+    try:
+        from ..lookups import field_defaults
+        fillable = {k for k, v in field_defaults(ctx.pcfg, "address").items() if v}
+    except Exception:  # noqa: BLE001 - the hint is a convenience
+        fillable = set()
+    for f in list(ctx.addr.getFeatures()):
         if not f.hasGeometry():
             out.append(Issue(f.id(), ERROR, "ADDR_NO_GEOMETRY", "Address point has no geometry"))
             continue
         empty = empty_required_fields(acc, f)
         if empty:
-            out.append(Issue(f.id(), WARNING, "ADDR_EMPTY_FIELDS",
-                             "Empty: " + ", ".join(empty) + " (Fill empty fields gives them the lookup defaults)"))
+            out.append(Issue(f.id(), WARNING, "ADDR_EMPTY_FIELDS", empty_fields_message(empty, fillable)))
         num, suf = parse_number(acc.get(f, "Add_Number"), acc.get(f, "AddNum_Suf") if acc.has("AddNum_Suf") else None)
         sid = N.clean(acc.get(f, "StreetID")) if acc.has("StreetID") else ""
         parts = {p: acc.get(f, p) for p in N.NAME_PARTS}
@@ -85,7 +102,9 @@ def address_issues(ctx: AddressContext, check_attribution: bool = True) -> List[
         if not side:
             continue
         per_side[(street, side)].append((dist, num, f.id()))
-        seg = next(ctx.rcl.getFeatures(QgsFeatureRequest().setFilterFid(seg_fid)), None)
+        if seg_fid not in segments:
+            segments[seg_fid] = next(ctx.rcl.getFeatures(QgsFeatureRequest().setFilterFid(seg_fid)), None)
+        seg = segments[seg_fid]
         if seg is None:
             continue
         names = SIDE_FIELDS[side]

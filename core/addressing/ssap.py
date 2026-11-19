@@ -62,9 +62,9 @@ SSAP_FIELDS = [
     FieldDef("Mile_Post", OPT, S, 150, "Mile post"),
     FieldDef("Place_Type", OPT, S, 50, "Place type"),
     FieldDef("Placement", OPT, S, 25, "Placement method (Structure, Site, Property Access …)"),
-    FieldDef("Longitude", OPT, D, 0, "Longitude (WGS84)"),
-    FieldDef("Latitude", OPT, D, 0, "Latitude (WGS84)"),
-    FieldDef("Elevation", OPT, INT, 0, "Elevation"),
+    FieldDef("Longitude", OPT, D, 0, "Longitude (WGS84)", ("LONG", "LON", "LNG", "X_WGS84")),
+    FieldDef("Latitude", OPT, D, 0, "Latitude (WGS84)", ("LAT", "Y_WGS84")),
+    FieldDef("Elevation", OPT, INT, 0, "Elevation", ("ELEV",)),
     # plugin link fields (not NENA)
     FieldDef("StreetID", OPT, S, 38, "Plugin: master street name link"),
     FieldDef("RCL_NGUID", OPT, S, 254, "Plugin: centerline segment it was addressed from"),

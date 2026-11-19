@@ -126,6 +126,25 @@ def test_import_skips_a_blank_street_name():
     assert names == ["Main"]
 
 
+def test_import_treats_zero_coordinates_as_not_recorded():
+    from qgis.core import Qgis
+    from nena_addressing_and_rcl_tools.core.importer import import_layer
+    src = QgsVectorLayer("None", "src")
+    dest = QgsVectorLayer("None", "addresses")
+    src._wkb = dest._wkb = Qgis.WkbType.NoGeometry
+    for lyr in (src, dest):
+        lyr.addAttribute(QgsField("St_Name", "string"))
+        lyr.addAttribute(QgsField("Longitude", "double"))
+        lyr.addAttribute(QgsField("Latitude", "double"))
+    src.add_committed(["Main", -82.6, 30.2], None)
+    src.add_committed(["Oak", 0.0, 0.0], None)
+    result = import_layer(src, dest, {"St_Name": "St_Name", "Longitude": "Longitude", "Latitude": "Latitude"})
+    assert result["written"] == 2 and result["zero_coordinates"] == 1
+    lon = dest.fields().lookupField("Longitude")
+    values = [getattr(v, "v", v) for v in (f.attribute(lon) for f in dest.getFeatures())]
+    assert values[0] == -82.6 and values[1] is None
+
+
 def test_rename_cascades_and_keeps_alias():
     rcl, addr, master, svc = setup()
     svc.build_from_centerlines()

@@ -339,7 +339,9 @@ class StreetService:
         ll = self._address_ready(ll)
         stamp = datetime.now().replace(microsecond=0)
         changes, linked, rewritten = {}, 0, 0
-        known = {r.street_id for r in by_key.values()} | set(self.repo.by_id())
+        recs = self.repo.by_id()   # read the master table once, not once per feature
+        recs.update({r.street_id: r for r in by_key.values()})
+        known = set(recs)
         abbr = self._abbr()
         for f in ll.layer.getFeatures():
             parts = {p: ll.acc.get(f, p) for p in N.NAME_PARTS}
@@ -348,7 +350,7 @@ class StreetService:
                 continue
             current = N.clean(ll.acc.get(f, "StreetID"))
             if current and current in known and not overwrite:
-                rec = self.repo.by_id().get(current)
+                rec = recs.get(current)
                 full = N.full_name(rec.parts) if rec is not None else ""
                 if rec is not None and ll.acc.has("FullName") and N.clean(ll.acc.get(f, "FullName")) != full:
                     changes[f.id()] = self._stamp_vals(ll, {"FullName": full or None}, stamp)
@@ -379,11 +381,12 @@ class StreetService:
             return [Issue(None, WARNING, "STREETID_NOT_MAPPED",
                           f"The {role} layer has no StreetID field – names cannot be checked against the master")]
         recs = self.repo.by_id()
+        abbr = self._abbr()
         out = []
         for f in ll.layer.getFeatures():
             sid = N.clean(ll.acc.get(f, "StreetID"))
             parts = {p: N.clean(ll.acc.get(f, p)) for p in N.NAME_PARTS}
-            named = bool(N.name_key(parts, abbreviations=self._abbr()))
+            named = bool(N.name_key(parts, abbreviations=abbr))
             if not sid:
                 if named:
                     out.append(Issue(f.id(), WARNING, "STREETID_MISSING",

@@ -156,7 +156,7 @@ def _copy_onto_addresses(layer, cfg, pcfg, piece_ids: Sequence[Hashable]) -> int
               for fid, feat in feats.items()}
     measures = {}
     changes = {}
-    for feat in ctx.addr.getFeatures():
+    for feat in list(ctx.addr.getFeatures()):
         if not feat.hasGeometry():
             continue
         sid = N.clean(ctx.addr_acc.get(feat, "StreetID")) if ctx.addr_acc.has("StreetID") else ""

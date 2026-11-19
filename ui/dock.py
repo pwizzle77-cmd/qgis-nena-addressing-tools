@@ -9,7 +9,7 @@ import os
 
 from qgis.core import QgsCoordinateReferenceSystem, QgsProject, QgsRectangle, QgsVectorLayer
 from qgis.gui import QgsMapLayerComboBox
-from qgis.PyQt.QtCore import QCoreApplication, QSettings, QSize, Qt, pyqtSignal
+from qgis.PyQt.QtCore import QCoreApplication, QSettings, QSize, Qt, QTimer, pyqtSignal
 from qgis.PyQt.QtWidgets import (QCheckBox, QDockWidget, QFileDialog, QGroupBox, QHBoxLayout, QInputDialog,
                                  QLabel, QMessageBox, QProgressBar, QPushButton, QVBoxLayout,
                                  QWidget)
@@ -185,10 +185,31 @@ class NenaDock(QDockWidget):
             except RuntimeError:
                 continue
         current = self.cb_layer.currentLayer()
+        if current is not None and current is not self.layer and not not_a_centerline(current):
+            self.set_layer(current)
         if current is None or not_a_centerline(current):
             best = preferred_centerline(QgsProject.instance().mapLayers().values())
             if best is not None and best is not current:
                 self.cb_layer.setLayer(best)
+        # The window pickers hear about added layers after this panel does, so
+        # bring them in line once every listener has run.
+        QTimer.singleShot(0, self._sync_mirrors)
+
+    def _sync_mirrors(self):
+        try:
+            layer = self.cb_layer.currentLayer()
+        except RuntimeError:
+            return
+        self._layer_sync = True
+        try:
+            for combo in list(getattr(self, "_layer_mirrors", [])):
+                try:
+                    if combo.currentLayer() != layer:
+                        combo.setLayer(layer)
+                except RuntimeError:
+                    continue
+        finally:
+            self._layer_sync = False
 
     def _project_page(self):
         """Schema, import, and change tracking. These are project settings, not daily tools."""
@@ -250,6 +271,10 @@ class NenaDock(QDockWidget):
                 self.cb_layer.setLayer(layer)
 
     def set_layer(self, layer):
+        if layer is None:
+            # A picker refresh (layers removed or added) can report "no layer"
+            # for a moment while it still shows one. Trust what it shows.
+            layer = self.cb_layer.currentLayer()
         self.layer = layer if isinstance(layer, QgsVectorLayer) else None
         names = [f.name() for f in self.layer.fields()] if self.layer else []
         self.mapping.set_layer_fields(names)
@@ -565,6 +590,7 @@ class NenaDock(QDockWidget):
                         "written": result["written"],
                         "skipped": result["skipped"],
                         "blank": result.get("blank") or 0,
+                        "zero_coordinates": result.get("zero_coordinates") or 0,
                         "null_geometry": result["null_geometry"],
                         "bad_values": result["bad_values"],
                         "multipart": result["multipart"],
@@ -1105,6 +1131,7 @@ class NenaDock(QDockWidget):
     def _mirror_from(self, source, layer):
         if self._layer_sync:
             return
+        layer = source.currentLayer()
         self._layer_sync = True
         try:
             if self.cb_layer.currentLayer() != layer:
