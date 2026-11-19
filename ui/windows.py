@@ -21,7 +21,7 @@ DOCKED_KEY = f"{SETTINGS_ROOT}/docked"
 # Starting sizes. A window keeps whatever size you give it after that.
 DEFAULT_SIZES = {
     "lookups": QSize(760, 640),
-    "settings": QSize(560, 680),
+    "settings": QSize(700, 680),
     "schema": QSize(460, 420),
     "validation": QSize(560, 620),
     "streets": QSize(520, 660),

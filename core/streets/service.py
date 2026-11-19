@@ -118,7 +118,11 @@ class StreetService:
             if ll is None or not ll.usable:
                 continue
             idx = ll.acc.index["StreetID"]
-            for f in ll.layer.getFeatures(QgsFeatureRequest().setSubsetOfAttributes([idx])):
+            req = QgsFeatureRequest().setSubsetOfAttributes([idx])
+            no_geom = getattr(getattr(QgsFeatureRequest, "Flag", QgsFeatureRequest), "NoGeometry", None)
+            if no_geom is not None and hasattr(req, "setFlags"):
+                req.setFlags(no_geom)           # counting needs no shapes; reading them was most of the time
+            for f in ll.layer.getFeatures(req):
                 sid = N.clean(ll.acc.get(f, "StreetID"))
                 if sid:
                     out.setdefault(sid, [0, 0])[k] += 1

@@ -43,6 +43,7 @@ class ValidationTab(QWidget):
     exportCsvRequested = pyqtSignal()
     loadLayerRequested = pyqtSignal()
     compareMsagRequested = pyqtSignal()
+    settingsRequested = pyqtSignal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -51,8 +52,7 @@ class ValidationTab(QWidget):
         outer.setContentsMargins(0, 0, 0, 0)
         self.pages = QTabWidget()
         self.pages.setDocumentMode(True)
-        self.pages.setUsesScrollButtons(True)
-        self.pages.tabBar().setUsesScrollButtons(True)
+        self.pages.setTabBarAutoHide(True)          # Results only; the settings moved to Settings, Checks
         outer.addWidget(self.pages)
 
         results = QWidget()
@@ -67,10 +67,21 @@ class ValidationTab(QWidget):
         row.addWidget(b1)
         row.addWidget(b2)
         lay.addLayout(row)
+        row = QHBoxLayout()
         b3 = QPushButton("Find overlaps")
         b3.setToolTip("Run only the overlap check and select every feature involved")
         b3.clicked.connect(lambda *_: self.findOverlapsRequested.emit(False))
-        lay.addWidget(b3)
+        row.addWidget(b3)
+        b4 = QPushButton("Compare to MSAG")
+        b4.setToolTip("List streets, communities, and ranges that do not match the centerline sides. "
+                      "Choose the MSAG extract under Settings, Checks.")
+        b4.clicked.connect(lambda *_: self.compareMsagRequested.emit())
+        row.addWidget(b4)
+        b5 = QPushButton("Settings…")
+        b5.setToolTip("What to check, gap tolerance, overlap scope, and the MSAG extract")
+        b5.clicked.connect(lambda *_: self.settingsRequested.emit("Checks"))
+        row.addWidget(b5)
+        lay.addLayout(row)
 
         top = QHBoxLayout()
         self.lbl_summary = QLabel("Not run yet.")
@@ -136,11 +147,8 @@ class ValidationTab(QWidget):
         clay.addWidget(g)
         clay.addLayout(form)
         clay.addWidget(hint("Saved with the centerline automatically."))
-        clay.addStretch(1)
-        self.pages.addTab(checks, "Checks")
+        self.checks_page = checks                   # shown on Settings, Checks
 
-        msag = QWidget()
-        mlay = page_into(msag)
         g = QGroupBox("MSAG extract")
         form = QFormLayout(g)
         form.addRow(hint("Compare each side of a road to the telephone company's street, community, "
@@ -161,13 +169,9 @@ class ValidationTab(QWidget):
         form.addRow("Low", self.fc_low)
         form.addRow("High", self.fc_high)
         form.addRow("Odd/even", self.fc_parity)
-        b = QPushButton("Compare to MSAG")
-        b.setToolTip("List streets, communities, and ranges that do not match the centerline sides")
-        b.clicked.connect(lambda *_: self.compareMsagRequested.emit())
-        form.addRow(b)
-        mlay.addWidget(g)
-        mlay.addStretch(1)
-        self.pages.addTab(msag, "MSAG")
+        form.addRow(hint("Compare to MSAG is on the Check window."))
+        clay.addWidget(g)
+        clay.addStretch(1)
 
     # ------------------------------------------------------------------
     def load(self, cfg: C.PluginConfig, msag: MsagSettings = None):

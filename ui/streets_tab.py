@@ -18,10 +18,12 @@ from ..core.streets import repository as REPO
 from ..core.addressing import engine as E
 from ..core.streets import dbsql
 from ..core.streets.relations import setup_relations
+from ..core.streets.listing import build_rows
 from ..core.streets.service import StreetService, add_link_field
 from .address_dialogs import ReaddressDialog, SqlDialog
 from .street_dialogs import BuildDialog, IssuesDialog, NameDialog, StreetTypesDialog
-from .widgets import BoundedTable, FittingScroll, combo, hint, set_combo_data
+from .street_table import StreetTableView
+from .widgets import FittingScroll, combo, hint, set_combo_data
 
 SCOPE_FIELDS = [("MSAG community (MSAGComm_L)", "MSAGComm_L"), ("Incorporated municipality (IncMuni_L)", "IncMuni_L"),
                 ("Postal community (PostComm_L)", "PostComm_L"), ("ESN (ESN_L)", "ESN_L"),
@@ -41,8 +43,14 @@ class StreetsTab(QWidget):
         scroll.setWidget(body)
         outer.addWidget(scroll)
 
-        lay.addWidget(hint("One list of road names. Roads and addresses link to it by <b>StreetID</b>. "
-                           "Renaming a name here updates every linked feature."))
+        top = QHBoxLayout()
+        top.addWidget(hint("One list of road names. Roads and addresses link to it by <b>StreetID</b>. "
+                           "Renaming a name here updates every linked feature."), 1)
+        b = QPushButton("Settings…")
+        b.setToolTip("The master table, the link field, and the street-name rules")
+        b.clicked.connect(lambda *_: self.dock.open_settings("Street rules"))
+        top.addWidget(b, 0, Qt.AlignmentFlag.AlignTop)
+        lay.addLayout(top)
 
         # -- layers --------------------------------------------------------
         g = QGroupBox("Layers")
@@ -80,8 +88,8 @@ class StreetsTab(QWidget):
         b.clicked.connect(lambda *_: self.add_link_fields())
         row.addWidget(b)
         f.addRow("Link field", row)
-        f.addRow(hint("The centerline is the layer at the top of this window. Address points are in the Addresses window."))
-        lay.addWidget(g)
+        f.addRow(hint("The centerline is chosen at the top of the tool windows."))
+        self.layers_group = g                       # shown on Settings, Layers
 
         # -- uniqueness (shown on Settings) --------------------------------
         g = QGroupBox("Name uniqueness")
@@ -146,15 +154,8 @@ class StreetsTab(QWidget):
         row.addWidget(self.chk_retired)
         row.addWidget(b)
         v.addLayout(row)
-        self.table = BoundedTable(0, 5, min_height=180, max_height=320)
-        self.table.setHorizontalHeaderLabels(["Full name", "Status", "Scope", "Segments", "Addresses"])
-        self.table.verticalHeader().setVisible(False)
-        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-        self.table.setSortingEnabled(True)
-        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        self.table.itemDoubleClicked.connect(lambda *_: self.rename())
+        self.table = StreetTableView(min_height=180, max_height=320)
+        self.table.doubleClicked.connect(lambda *_: self.rename())
         v.addWidget(self.table)
         grid = QGridLayout()
         for i, (text, tip, slot) in enumerate((
@@ -365,49 +366,34 @@ class StreetsTab(QWidget):
 
     # ------------------------------------------------------------------ list
     def refresh_list(self):
-        self.table.setSortingEnabled(False)
-        self.table.setRowCount(0)
+        keep = self.table.selected_sid()
         master = self.cb_master.currentLayer()
         if master is None:
+            self.table.set_rows([])
             return
         try:
             self.pcfg.streets.street_id_field = self.ed_link.text().strip() or "StreetID"
             svc = StreetService(self.pcfg, centerline_layer=self.dock.layer,
                                 centerline_cfg=self.dock.cfg if self.dock.layer else None, master_layer=master)
-            recs = svc.repo.records()
-            counts = svc.counts()
+            rows = build_rows(svc.repo.records(), svc.counts())
         except ConfigError as exc:
             self.table.setToolTip(str(exc))      # e.g. a table without the master fields yet
+            self.table.set_rows([])
             return
         self.table.setToolTip("")
-        self.table.setRowCount(len(recs))
-        for r, rec in enumerate(sorted(recs, key=lambda x: x.full_name)):
-            seg, adr = counts.get(rec.street_id, (0, 0))
-            for c, val in enumerate([rec.full_name, rec.status, rec.scope, seg, adr]):
-                it = QTableWidgetItem()
-                if isinstance(val, int):
-                    it.setData(Qt.ItemDataRole.DisplayRole, val)
-                else:
-                    it.setText(val)
-                it.setData(Qt.ItemDataRole.UserRole, rec.street_id)
-                self.table.setItem(r, c, it)
-        self.table.setSortingEnabled(True)
+        self.table.set_rows(rows)
         self._filter()
+        if keep:
+            self.table.select_sid(keep)
 
     def _filter(self):
-        text = self.ed_search.text().strip().upper()
-        show_retired = self.chk_retired.isChecked()
-        for r in range(self.table.rowCount()):
-            name = (self.table.item(r, 0).text() or "").upper()
-            status = self.table.item(r, 1).text()
-            hidden = (text and text not in name) or (status == N.STATUS_RETIRED and not show_retired)
-            self.table.setRowHidden(r, bool(hidden))
+        self.table.set_filter(self.ed_search.text(), self.chk_retired.isChecked())
 
     def _selected_sid(self):
-        rows = self.table.selectionModel().selectedRows()
-        if not rows:
+        sid = self.table.selected_sid()
+        if not sid:
             raise ConfigError("Select a street in the list first.")
-        return self.table.item(rows[0].row(), 0).data(Qt.ItemDataRole.UserRole)
+        return sid
 
     def add(self):
         def do():
@@ -428,12 +414,9 @@ class StreetsTab(QWidget):
         self.dock._guard(do)
 
     def _select_sid(self, sid):
-        for r in range(self.table.rowCount()):
-            it = self.table.item(r, 0)
-            if it is not None and it.data(Qt.ItemDataRole.UserRole) == sid:
-                self.table.selectRow(r)
-                self.table.scrollToItem(it)
-                return
+        if not self.table.select_sid(sid) and self.ed_search.text():
+            self.ed_search.clear()               # the new name may not match the search
+            self.table.select_sid(sid)
 
     def draw(self):
         def do():

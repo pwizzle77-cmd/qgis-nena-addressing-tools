@@ -100,8 +100,11 @@ class NenaDock(QDockWidget):
         self.addresses = AddressesTab(self)
         self.lookups = LookupPage(self)
         self.ranging.manual_slot.addWidget(self.edit.manual_group)
+        self.versions_group = self._versions_group()
         self.schema_page = self._project_page()
         self.settings = SettingsTab((
+            ("Layers", host_groups(self.streets.layers_group, self.addresses.layers_group),
+             "Master street names, address points, driveways, access points, and the link field"),
             ("Fields", self.mapping, "Match NENA fields to the centerline"),
             ("Sides", host_groups(self.mapping.side_group),
              "ZIP, MSAG, and ESN on each side of the road"),
@@ -109,11 +112,17 @@ class NenaDock(QDockWidget):
              "Values that fill empty fields"),
             ("Street rules", host_groups(self.streets.uniqueness_group, self.streets.behaviour_group),
              "How street names must be unique, and what a rename does"),
-            ("Address rules", host_groups(self.addresses.numbering_group, self.addresses.overrides_group),
-             "How a new address gets its number"),
-            ("Editing", host_groups(self.edit.auto_group, self.edit.nguid_group),
-             "What happens while you edit, and NGUID"),
+            ("Address rules", host_groups(self.addresses.numbering_group, self.addresses.overrides_group,
+                                          self.addresses.new_group),
+             "How a new address gets its number, and what it starts with"),
+            ("Ranging", self.ranging.method_page,
+             "How numbers are assigned along a street: method, parity, interval, address points, output"),
+            ("Checks", self.validation.checks_page, "What Check looks for, and the MSAG extract"),
+            ("Editing", host_groups(self.edit.auto_group, self.edit.nguid_group, self.versions_group),
+             "What happens while you edit, NGUID, and change tracking"),
         ))
+        self.ranging.settingsRequested.connect(self.open_settings)
+        self.validation.settingsRequested.connect(self.open_settings)
         self.addresses.toolRequested.connect(lambda *_: self.addressToolRequested.emit())
         self.addresses.drivewayToolRequested.connect(lambda *_: self.drivewayToolRequested.emit())
         self.addresses.unitsToolRequested.connect(lambda *_: self.unitsToolRequested.emit())
@@ -211,6 +220,25 @@ class NenaDock(QDockWidget):
         finally:
             self._layer_sync = False
 
+    def _versions_group(self):
+        group = QGroupBox("Versions")
+        box = QVBoxLayout(group)
+        self._syncing_archive = False
+        self.chk_archive_edits = QCheckBox("Track changes")
+        self.chk_archive_edits.setToolTip("When you save a centerline, street name, address, or driveway, "
+                                          "add a version of that feature to its version table.")
+        self.chk_archive_edits.toggled.connect(self._toggle_archive)
+        box.addWidget(self.chk_archive_edits)
+        box.addWidget(hint("Version tables sit in the collapsed Versions group of the Layers panel. "
+                           "Create them with Schema and import, Versions…"))
+        return group
+
+    def open_settings(self, page=""):
+        """Open the Settings window, on ``page`` when given."""
+        if page:
+            self.settings.show_page(page)
+        self.open_page(self.settings_root)
+
     def _project_page(self):
         """Schema, import, and change tracking. These are project settings, not daily tools."""
         page = QWidget()
@@ -230,15 +258,13 @@ class NenaDock(QDockWidget):
         b_archive.setToolTip("Create version tables for those layers in a GeoPackage, File Geodatabase, "
                              "or database connection. Each save records one version of the feature.")
         b_archive.clicked.connect(self.create_archive_schema)
+        b_track = QPushButton("Track changes…")
+        b_track.setToolTip("Turn change tracking on or off (Settings, Editing)")
+        b_track.clicked.connect(lambda *_: self.open_settings("Editing"))
         box.addWidget(b_schema)
         box.addWidget(b_import)
         box.addWidget(b_archive)
-        self._syncing_archive = False
-        self.chk_archive_edits = QCheckBox("Track changes")
-        self.chk_archive_edits.setToolTip("When you save a centerline, street name, address, or driveway, "
-                                          "add a version of that feature to its version table.")
-        self.chk_archive_edits.toggled.connect(self._toggle_archive)
-        box.addWidget(self.chk_archive_edits)
+        box.addWidget(b_track)
         lay.addWidget(group)
         lay.addStretch(1)
         self.sync_archive_option()
@@ -701,11 +727,9 @@ class NenaDock(QDockWidget):
         self.projectConfigSaved.emit()
 
     def _hide_support_tables(self):
-        """New version and lookup tables stay out of the Layers panel unless the project says otherwise."""
-        from ..core.hidden_layers import set_support_hidden
-        pcfg = load_project_config()
-        if pcfg.display.hide_support_tables:
-            set_support_hidden(pcfg, True)
+        """Version and lookup tables into their collapsed subgroups (or hidden, if the project says so)."""
+        from ..core.hidden_layers import apply_support_layout
+        apply_support_layout(load_project_config())
 
     def _schema_group(self, prj, name):
         from qgis.core import QgsLayerTreeGroup

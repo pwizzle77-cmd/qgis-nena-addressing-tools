@@ -141,11 +141,11 @@ Work through this section once per county (or per project) before you start rang
 | ☐ | 6. Drop-down lists | NENA ▾ → Lookup tables | Consistent values |
 | ☐ | 7. Master street names | NENA ▾ → Streets, Settings → Street rules | Draw road, renames, addresses |
 | ☐ | 8. Line direction | Style NENA layers, Reverse | Correct left/right and numbers |
-| ☐ | 9. Ranging method and parity | Ranges → Method | Range, Split, Draw road |
+| ☐ | 9. Ranging method and parity | Settings → Ranging | Range, Split, Draw road |
 | ☐ | 10. What happens while you edit | Settings → Editing | Split, merge, new roads |
 | ☐ | 11. Address layers | NENA ▾ → Addresses | Place address, driveways, units |
 | ☐ | 12. House-number rules | Settings → Address rules | Place address, units |
-| ☐ | 13. Checks | NENA ▾ → Check → Checks | Validate |
+| ☐ | 13. Checks | Settings → Checks | Validate |
 | ☐ | 14. **Save the project** | Project → Save | Keeping all of the above |
 
 ### 1. Pick the centerline layer
@@ -251,7 +251,7 @@ See [Drop-down lists](#drop-down-lists-lookup-tables) for details.
 
 House numbers increase in the direction each road was drawn, and left/right is read in that direction. Click **NENA ▾ → Style NENA layers**, look at the arrows (green dot = start, red square = end), and **Reverse** any road drawn the wrong way. **Check** also lists pieces that run against their neighbours (*DIRECTION_CONFLICT*).
 
-### 9. Ranging method and parity — NENA ▾ → Ranges → Method
+### 9. Ranging method and parity — Settings → Ranging
 
 The default is **ranging by distance** (Interval, one number every 5.28 ft ≈ 1,000 numbers per mile), the usual method for rural and county-wide distance addressing. Hundred-block is still available for city grids.
 
@@ -300,7 +300,7 @@ The default is **ranging by distance** (Interval, one number every 5.28 ft ≈ 1
 | **Placement** | The placement value written on new points (default *Structure*) |
 | **Show where selected addresses were addressed on the road** | Map markers for selected addresses (on by default) |
 
-Also set the address-point layer under **Streets** (so renames update addresses) and on **Ranges → Method → Address points** (so splits respect houses).
+Also set the address-point layer under **Streets** (so renames update addresses) and on **Settings → Ranging → Address points** (so splits respect houses).
 
 ### 12. House-number rules — Settings → Address rules
 
@@ -316,9 +316,9 @@ Also set the address-point layer under **Streets** (so renames update addresses)
 | **Number taken** | Use the next free number, add a suffix (101A), or ask | Next free number |
 | **Overrides per community** | A different method, distance, or start number for one MSAG community, ESN, ZIP, city, or county | None |
 
-### 13. Checks — NENA ▾ → Check → Checks
+### 13. Checks — Settings → Checks
 
-Tick the checks you want, set the **Gap tolerance** (extra numbers allowed between pieces before a gap is reported), and an **Overlap scope** field if the same street name may repeat in different communities. For the MSAG comparison, load the MSAG table and pick its Street, Community, Low, High, and Odd/even columns on **Check → MSAG**.
+Tick the checks you want, set the **Gap tolerance** (extra numbers allowed between pieces before a gap is reported), and an **Overlap scope** field if the same street name may repeat in different communities. For the MSAG comparison, load the MSAG table and pick its Street, Community, Low, High, and Odd/even columns on **Settings → Checks → MSAG extract**, then click **Compare to MSAG** on the Check window.
 
 ### 14. Save the project
 
@@ -377,7 +377,7 @@ Windows remember their size and position.
 
 **Rather keep them docked?** Tick **NENA ▾ → Dock the NENA windows in the side panel**. They'll open as tabs next to the Browser/Catalog instead of as separate windows.
 
-**Version and lookup tables out of the way.** When the plugin creates the version (history) tables and the lookup tables (road types, unit types, statuses, and domain values), it keeps them out of the Layers panel. They're still loaded, so change tracking and the drop-down lists keep working. To see them, untick **NENA ▾ → Hide version and lookup tables**; they come back in a group called **NENA support tables**. Tick it again to hide them. The choice is saved with the project.
+**Version and lookup tables out of the way.** The version (history) tables go in a collapsed, unticked **Versions** group and the lookup tables (road types, unit types, statuses, and domain values) in a **Lookup tables** group, at the bottom of the NENA group, below the layers you edit. They are ordinary layers there: open them whenever you like. Change tracking and the drop-down lists work whether the groups are ticked or not. Projects made with an earlier version are tidied the same way when you open them. To keep them out of the Layers panel completely, tick **NENA ▾ → Hide version and lookup tables**; they stay loaded. The choice is saved with the project.
 
 > Don't remove a version table from the project to get it out of the way: a removed table is no longer updated. Hide it instead.
 
@@ -724,11 +724,11 @@ Open **NENA ▾ → Ranges**.
 | **Proportional** | Spreads a low–high range across the street by length, and can bend around existing addresses | Fitting existing numbers |
 | **From address points** | Builds the range from the house numbers near each piece | Data with good address points |
 
-> 💡 **Ranging and house numbers have separate distance settings.** Ranging uses **Ranges → Method → Distance per number**; new addresses use **Settings → Address rules → Distance per number**. Both default to 5.28 ft, so keep them the same. A layer set up with an earlier version keeps the method it was saved with (often Hundred-block, which gives each piece a full block however long it is); switch it to **Interval** on **Ranges → Method**. **Draw road** always ranges by distance.
+> 💡 **Ranging and house numbers have separate distance settings.** Ranging uses **Settings → Ranging → Distance per number**; new addresses use **Settings → Address rules → Distance per number**. Both default to 5.28 ft, so keep them the same. A layer set up with an earlier version keeps the method it was saved with (often Hundred-block, which gives each piece a full block however long it is); switch it to **Interval** on **Settings → Ranging**. **Draw road** always ranges by distance.
 
 **Range selected** and **Range layer** run as one undo step.
 
-**Fill range gaps** extends a piece so its numbers meet the next piece of the same street. Overlaps are left alone. The gap tolerance is set on **Check → Checks**.
+**Fill range gaps** extends a piece so its numbers meet the next piece of the same street. Overlaps are left alone. The gap tolerance is set on **Settings → Checks**.
 
 Only features whose values actually change are edited.
 
@@ -740,7 +740,7 @@ Turn these on or off under **Settings → Editing**.
 
 | You… | The plugin… |
 |---|---|
-| **Split** a road with QGIS | Divides the original range across the pieces: where the house numbers are when you address by distance (From + distance from the start), otherwise by length. The first piece keeps **From**, the last keeps **To**. Undo once to restore the numbers, again to undo the split. Houses keep their numbers on the piece they actually front: the address points from **Ranges → Method → Address points** are used, or, when none is set there, the address-point layer from the **Addresses** window |
+| **Split** a road with QGIS | Divides the original range across the pieces: where the house numbers are when you address by distance (From + distance from the start), otherwise by length. The first piece keeps **From**, the last keeps **To**. Undo once to restore the numbers, again to undo the split. Houses keep their numbers on the piece they actually front: the address points from **Settings → Ranging → Address points** are used, or, when none is set there, the address-point layer from the **Addresses** window |
 | Use the **Split** tool | One click: hover to preview, click to split. Both pieces are re-ranged and the new piece gets a new ID. One undo step |
 | **Draw a new road** that ends on or crosses another road | Splits the existing road there and continues the range. Turn off "crossings" where you have overpasses |
 | Have **old roads that cross** without being split | **Split at intersections** finds and splits them, then re-ranges |
@@ -772,22 +772,25 @@ The **Results** page lists every problem. Double-click a row to zoom to it. You 
 
 **Address checks** (from the Addresses window) catch numbers outside the road's range, the wrong odd/even side, numbers out of order, duplicates, access points that have moved off the road, missing streets, and ZIP/community/ESN values that don't match the road side.
 
-**MSAG comparison** (**Check → MSAG**): load your telephone company's MSAG into the project, pick its columns, and compare. `MAIN ST` matches `Main Street`. MSAG rows that aren't on your map are listed too.
+**MSAG comparison** (**Check → Compare to MSAG**; the extract and its columns are on **Settings → Checks**): load your telephone company's MSAG into the project, pick its columns, and compare. `MAIN ST` matches `Main Street`. MSAG rows that aren't on your map are listed too.
 
 ---
 
 ## Settings
 
-Open **NENA ▾ → Settings**. These are things you set once. **They save automatically.**
+Open **NENA ▾ → Settings**, or the **Settings…** button on any tool window, which opens its page. Everything you set once is here, one page per subject in the list on the left; the tool windows keep only what you do. **Settings save automatically.**
 
 | Page | What you set |
 |---|---|
+| **Layers** | Master street names, address points, driveways, access points, the link field, and the address schema |
 | **Fields** | Match your road layer's columns to NENA names |
 | **Sides** | ZIP, MSAG community, ESN, city limits, and unincorporated community polygon layers |
 | **Defaults** | Values like state, county, agency, and one-way that fill **only empty** fields. Leave parity blank so ranging sets it |
-| **Street rules** | When two names count as the same, and what a rename does |
-| **Address rules** | How a new address gets its number |
-| **Editing** | What happens when you split, merge, or add a road, plus IDs |
+| **Street rules** | When two names count as the same, what a rename does, and the street-types list |
+| **Address rules** | How a new address gets its number, overrides per community, placement |
+| **Ranging** | Ranging method, parity, interval, proportional ranges, address points, and output |
+| **Checks** | What Check looks for, gap tolerance, overlap scope, and the MSAG extract |
+| **Editing** | What happens when you split, merge, or add a road, IDs, and **Track changes** |
 
 **More on Fields:**
 
@@ -849,7 +852,7 @@ GeoPackages, file geodatabases, and shapefiles have no login, so these fields ar
 
 ### Edit history (versions)
 
-Click **Versions** to create history tables, then turn on **Track changes**. Every time you save a road, street name, address, driveway, or access point, a history row is added.
+Click **Versions** to create history tables, then turn on **Track changes** (**Settings → Editing → Versions**). Every time you save a road, street name, address, driveway, or access point, a history row is added.
 
 | You saved… | History records… |
 |---|---|
@@ -896,6 +899,7 @@ To see one feature's history, filter the history table by its ID and sort by ver
 
 ## What's new
 
+- **3.6.17** — **One Settings window.** Every setting is on a page of **NENA ▾ → Settings**, chosen from a list on the left: Layers, Fields, Sides, Defaults, Street rules, Address rules, Ranging, Checks, and Editing. The Streets, Addresses, Ranges, and Check windows keep their buttons and lists, plus a **Settings…** button that opens their page. **Version and lookup tables** now sit in collapsed, unticked **Versions** and **Lookup tables** groups at the bottom of the NENA group instead of being hidden; projects from earlier versions are tidied when opened, and hiding them completely is still on the NENA menu. The **master street list** draws only the rows on screen, so a county's few thousand names open at once and the search is instant.
 - **3.6.16** — **Tested end to end in QGIS 4** on a county's GeoComm data (8,429 roads, 36,928 addresses), in a File Geodatabase and in SQL Server. Fixes from that run:
   - The lookup and version tables no longer disappear after **Create schema**. QGIS 4 deleted a hidden table; the plugin now hides them without removing them.
   - The panel, and the Centerline pickers on the Check and other windows, keep the centerline layer after a schema is created.
