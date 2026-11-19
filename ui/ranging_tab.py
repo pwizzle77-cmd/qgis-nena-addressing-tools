@@ -32,30 +32,29 @@ class RangingTab(QWidget):
     rangeSelectedRequested = pyqtSignal()
     rangeAllRequested = pyqtSignal()
     fillGapsRequested = pyqtSignal()
+    settingsRequested = pyqtSignal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
-        pages = QTabWidget()
-        pages.setDocumentMode(True)
-        pages.setUsesScrollButtons(True)
-        pages.tabBar().setUsesScrollButtons(True)
         run = QWidget()
         run_lay = page_into(run)
+        outer.addWidget(run)
         method = QWidget()
         lay = page_into(method)
-        pages.addTab(run, "Run")
-        pages.setTabToolTip(0, "Range the roads, fill gaps, and split")
-        pages.addTab(method, "Method")
-        pages.setTabToolTip(1, "How numbers are assigned along a street")
-        outer.addWidget(pages)
+        self.method_page = method                   # shown on Settings, Ranging
 
-        run_lay.addWidget(hint("Uses the centerline at the top of the panel. Choose how numbers are assigned "
-                               "on the Method tab."))
+        run_lay.addWidget(hint("Uses the centerline at the top of the window."))
+        row = QHBoxLayout()
         self.lbl_method = QLabel("")
         self.lbl_method.setWordWrap(True)
-        run_lay.addWidget(self.lbl_method)
+        row.addWidget(self.lbl_method, 1)
+        b = QPushButton("Settings…")
+        b.setToolTip("How numbers are assigned along a street: method, parity, interval, address points, output")
+        b.clicked.connect(lambda *_: self.settingsRequested.emit("Ranging"))
+        row.addWidget(b)
+        run_lay.addLayout(row)
 
         # -- method ------------------------------------------------------
         g = QGroupBox("Method")

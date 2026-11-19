@@ -70,7 +70,9 @@ class AddressesTab(QWidget):
         lay.addLayout(row)
         row = QHBoxLayout()
         for text, slot, tip in (("Undo last", self.undo, "Remove the last address and the access point made with it"),
-                                ("Check", self.check, "Range, side, order, duplicates, boundaries")):
+                                ("Check", self.check, "Range, side, order, duplicates, boundaries"),
+                                ("Settings…", lambda: self.dock.open_settings("Address rules"),
+                                 "The address layers, numbering, and what new addresses get")):
             b = QPushButton(text)
             b.setToolTip(tip)
             b.clicked.connect(lambda *_, s=slot: s())
@@ -104,7 +106,7 @@ class AddressesTab(QWidget):
         b.setMenu(m)
         row.addWidget(b)
         f.addRow("Address schema", row)
-        lay.addWidget(g)
+        self.layers_group = g                       # shown on Settings, Layers
 
         # -- numbering -----------------------------------------------------
         g = QGroupBox("Numbering")
@@ -181,13 +183,17 @@ class AddressesTab(QWidget):
         f.addRow("Placement", self.cb_place)
         f.addRow(hint("Status, type and placement start on the value ticked <b>Default</b> in "
                       "<b>Lookup tables</b>. A value ticked there wins over Placement above."))
+        self.chk_overlay = QCheckBox("Show where selected addresses were addressed on the road")
+        f.addRow(self.chk_overlay)
+        self.new_group = g                          # shown on Settings, Address rules
+
+        g = QGroupBox("Empty fields")
+        v = QVBoxLayout(g)
         b = QPushButton("Fill empty fields")
         b.setToolTip("Give the selected address points (all, when none are selected) the Default value of "
                      "each list where the field is empty: status, type, placement, agency. Filled fields stay.")
         b.clicked.connect(self.fill_empty)
-        f.addRow(b)
-        self.chk_overlay = QCheckBox("Show where selected addresses were addressed on the road")
-        f.addRow(self.chk_overlay)
+        v.addWidget(b)
         lay.addWidget(g)
 
         g = QGroupBox("ZIP, MSAG, and ESN")

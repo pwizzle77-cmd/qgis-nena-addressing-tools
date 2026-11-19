@@ -43,8 +43,14 @@ class StreetsTab(QWidget):
         scroll.setWidget(body)
         outer.addWidget(scroll)
 
-        lay.addWidget(hint("One list of road names. Roads and addresses link to it by <b>StreetID</b>. "
-                           "Renaming a name here updates every linked feature."))
+        top = QHBoxLayout()
+        top.addWidget(hint("One list of road names. Roads and addresses link to it by <b>StreetID</b>. "
+                           "Renaming a name here updates every linked feature."), 1)
+        b = QPushButton("Settings…")
+        b.setToolTip("The master table, the link field, and the street-name rules")
+        b.clicked.connect(lambda *_: self.dock.open_settings("Street rules"))
+        top.addWidget(b, 0, Qt.AlignmentFlag.AlignTop)
+        lay.addLayout(top)
 
         # -- layers --------------------------------------------------------
         g = QGroupBox("Layers")
@@ -82,8 +88,8 @@ class StreetsTab(QWidget):
         b.clicked.connect(lambda *_: self.add_link_fields())
         row.addWidget(b)
         f.addRow("Link field", row)
-        f.addRow(hint("The centerline is the layer at the top of this window. Address points are in the Addresses window."))
-        lay.addWidget(g)
+        f.addRow(hint("The centerline is chosen at the top of the tool windows."))
+        self.layers_group = g                       # shown on Settings, Layers
 
         # -- uniqueness (shown on Settings) --------------------------------
         g = QGroupBox("Name uniqueness")
