@@ -26,6 +26,7 @@ from ..nguid import local_id, make_nguid
 from ..project_config import ProjectConfig, layer_for
 from ..ranging import normalize_parity, to_meters
 from ..defaults import address_fallbacks
+from ..direction import normalize_one_way
 from ..schema import SIDE_FIELDS, auto_map
 from ..streets import names as N
 from ..streets.repository import StreetRepository
@@ -274,6 +275,7 @@ class StreetMeasure:
         self.ctx = ctx
         self.sid = sid
         self.segs: Dict[Hashable, Tuple[QgsGeometry, float, float]] = {}   # fid -> (linear geom, length_m, start_m)
+        self.from_end = set()
         infos = []
         geoms = {}
         for f in _ordered_features(ctx.rcl, street_segment_ids(ctx, sid, key)):
@@ -287,6 +289,8 @@ class StreetMeasure:
             info = gu.line_info(g)
             if info.empty:
                 continue
+            if normalize_one_way(ctx.rcl_acc.get(f, "OneWay")) == "TF":
+                self.from_end.add(f.id())
             ln = gu.length_m(ctx.da, f.geometry())
             geoms[f.id()] = (g, ln)
             infos.append(SegmentInfo(f.id(), info.start, info.end, ln, "street", info.start_bearing,
@@ -316,6 +320,10 @@ class StreetMeasure:
                 d += ln
                 node_dist.setdefault(s.end_node, d)
                 node_run.setdefault(s.end_node, run)
+
+    def numbering_fraction(self, fid: Hashable, fraction: float) -> float:
+        """TF numbers count from the final vertex; geometry and sides keep their direction."""
+        return 1.0 - fraction if fid in self.from_end else fraction
 
     def locate(self, pt: QgsPointXY, only_fid: Optional[Hashable] = None):
         """-> (distance_m, fid, frac, (dx, dy) road direction, sq. distance) or None."""
@@ -423,10 +431,10 @@ def plan_address(ctx: AddressContext, access: QgsPointXY, rooftop: QgsPointXY,
     settings = numbering_settings(a, community.get(a.override_field, ""))
     seg_from, seg_to = ctx.rcl_acc.get_int(feat, SIDE_FIELDS[side]["from"]), \
         ctx.rcl_acc.get_int(feat, SIDE_FIELDS[side]["to"])
-    # Everything is measured on the segment that was clicked: the distance from its first
-    # point, starting at its From number on that side (the start number when it has none).
+    # Keep the geometry fraction for side attribution and access-point placement.
+    number_frac = measure.numbering_fraction(segment_fid, frac)
     seg_len = measure.segs[segment_fid][1] if segment_fid in measure.segs else 0.0
-    dist = frac * seg_len
+    dist = number_frac * seg_len
     base_note = ""
     if seg_from:
         settings = replace(settings, start_number=int(seg_from))
@@ -436,10 +444,12 @@ def plan_address(ctx: AddressContext, access: QgsPointXY, rooftop: QgsPointXY,
     on_street = street_addresses(ctx, sid, parts, side, measure, exclude_address)
     neighbors = [NB.Neighbor(item.seg_distance, item.number, item.suffix)
                  for item in on_street if item.segment == segment_fid]
-    res = NB.calculate(settings, parity, neighbors, dist, frac, seg_from, seg_to)
+    res = NB.calculate(settings, parity, neighbors, dist, number_frac, seg_from, seg_to)
     plan = AddressPlan(segment_fid, sid, parts, side, parity, dist, frac, access, rooftop, list(vertices), res,
                        community, notes, side_updates, rcl_nguid=str(ctx.rcl_acc.get(feat, "RCL_NGUID") or ""),
                        parent_driveway=parent_driveway)
+    if segment_fid in measure.from_end:
+        plan.messages.append("TF road: numbering starts at the line's end, using this side's From number as the base.")
     for note in (parity_note, base_note, res.message):
         if note:
             plan.messages.append(note)
@@ -553,7 +563,7 @@ def parity_matches(number: int, parity: str) -> bool:
 @dataclass
 class StreetAddress:
     segment: Hashable        # centerline the address is measured on
-    seg_distance: float      # metres from that segment's first point
+    seg_distance: float      # metres from that segment's numbering origin (final point for TF)
     street_distance: float   # metres from the start of the connected street
     number: int
     suffix: str = ""
@@ -565,7 +575,7 @@ def street_addresses(ctx: AddressContext, sid: str, parts, side: str, measure: S
     out = []
     for f, num, suf, loc in _street_address_locations(ctx, sid, parts, side, measure, exclude):
         seg_len = measure.segs[loc[1]][1] if loc[1] in measure.segs else 0.0
-        out.append(StreetAddress(loc[1], loc[2] * seg_len, loc[0], num, suf))
+        out.append(StreetAddress(loc[1], measure.numbering_fraction(loc[1], loc[2]) * seg_len, loc[0], num, suf))
     return out
 
 
@@ -574,8 +584,8 @@ def existing_neighbors(ctx: AddressContext, sid: str, parts, side: str, measure:
     """
     Addresses already on this street and side.
 
-    With ``segment``, only the addresses on that segment, measured from its first
-    point. Without it, every address on the street, measured along the street.
+    With ``segment``, only the addresses on that segment, measured from its numbering
+    origin. Without it, every address on the street, measured along the street.
     """
     out = []
     for item in street_addresses(ctx, sid, parts, side, measure, exclude):

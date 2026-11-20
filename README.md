@@ -407,7 +407,7 @@ House numbers follow the direction a road was drawn:
 
 - **From** is at the start of the line (green dot), **To** is at the end (red square).
 - **Left** and **Right** are as you'd see them driving from the green dot toward the red square.
-- New addresses are numbered by their distance from the start of the street, so a road drawn backwards gets its numbers backwards too.
+- New addresses count from the clicked segment's first point, except on **OneWay TF**, where they count from its last point. Physical left/right still follows the direction the line was drawn.
 
 If addresses are coming out wrong on a road, look at its arrows. They should point the way the numbers go up.
 
@@ -424,6 +424,14 @@ The NENA **OneWay** field tells routing which way traffic may travel:
 | **TF** | One-way **To → From**: traffic travels against the way the line was drawn |
 
 Select the roads, click **One-way ▾** on the toolbar, and pick **Two-way**, **From → To**, **To → From**, or **Clear**. Only OneWay changes; the line and its address numbers stay as they are. If the layer has no OneWay field yet, the plugin offers to add it.
+
+For new address calculations, **TF** uses the last vertex as the numbering origin.
+Distance and frontage count back from that end; interpolation uses the fraction
+measured from that end. The side's **From** number remains the base (or the configured
+start number when From is missing). Existing addresses are not renumbered by changing
+OneWay. Left/right, parity, side attribution and access-point placement keep their
+geometry-based behavior. Neighbor order and address order checks follow the TF
+numbering origin. B, FT, blank and unmapped OneWay retain the first-point origin.
 
 With the NENA style, one-way roads show **large red arrows in the direction of travel** in place of the small blue drawing-direction arrows, so you can check them at a glance.
 
@@ -663,9 +671,9 @@ Set the method under **Settings → Address rules**. The first unit in a Place u
 |---|---|
 | **Left or right** | Comes from the direction the segment was drawn. Stand at its first point (green dot) facing its last point (red square): left is left |
 | **Odd or even** | **The centerline's own Parity_L / Parity_R comes first:** an O or E on that side of the clicked segment decides. A segment with no parity (or B) uses your settings, by default **odd on the left, even on the right**. Untick **Use the centerline's own Parity_L / Parity_R first** on Address rules to make your settings always win; a segment that disagrees is then reported. A side marked **Z** gets no addresses |
-| **The number: Defined distance** (default) | The segment's **From** number on that side, plus one number for every set distance from the segment's first point. 5.28 ft per number is about 1,000 numbers per mile. A segment with no From number starts at the start number you set |
-| **The number: Interpolated** | Placed between the segment's **From** and **To** on that side, in proportion to how far along the segment you clicked |
-| **The number: By frontage** | The segment's From, plus a fixed count of numbers for each lot width from the segment's first point |
+| **The number: Defined distance** (default) | The segment's **From** number on that side, plus one number for every set distance from the numbering origin: the first point, or the last point for **TF**. 5.28 ft per number is about 1,000 numbers per mile. A segment with no From number starts at the start number you set |
+| **The number: Interpolated** | Placed between the segment's **From** and **To** on that side using the fraction measured from the numbering origin (last point for **TF**) |
+| **The number: By frontage** | The segment's From, plus a fixed count of numbers for each lot width from its numbering origin (last point for **TF**) |
 | **Order** | Stays between the addresses already on that side of the **same segment**, so numbers keep increasing along it |
 | **Number already taken** | Takes the next free number, adds a suffix (101A), or asks you. If the number is already used on another segment of the street, you're warned |
 | **Different rules by area** | A community, ESN, ZIP, city, or county can have its own method or spacing |
@@ -1022,6 +1030,8 @@ To undo a change, pick the version you want to go back to and click **Roll back 
 
 ## What's new
 
+- **3.8.2** — TF addressing measures from the line's last vertex. Numbering formulas, the From-number base, parity, rounding, collision rules and physical sides stay the same. Neighbor and validation order use the same TF origin.
+- **3.8.1** — Deleting an address removes its temporary road-access circle, dashed line and label while keeping other selected addresses' drawings.
 - **3.6.17** — **One Settings window.** Every setting is on a page of **NENA ▾ → Settings**, chosen from a list on the left: Layers, Fields, Sides, Defaults, Street rules, Address rules, Ranging, Checks, and Editing. The Streets, Addresses, Ranges, and Check windows keep their buttons and lists, plus a **Settings…** button that opens their page. **Version and lookup tables** now sit in collapsed, unticked **Versions** and **Lookup tables** groups at the bottom of the NENA group instead of being hidden; projects from earlier versions are tidied when opened, and hiding them completely is still on the NENA menu. The **master street list** draws only the rows on screen, so a county's few thousand names open at once and the search is instant.
 - **3.6.16** — **Tested end to end in QGIS 4** on a county's GeoComm data (8,429 roads, 36,928 addresses), in a File Geodatabase and in SQL Server. Fixes from that run:
   - The lookup and version tables no longer disappear after **Create schema**. QGIS 4 deleted a hidden table; the plugin now hides them without removing them.

@@ -101,7 +101,9 @@ def address_issues(ctx: AddressContext, check_attribution: bool = True) -> List[
             side = NB.side_of(dx, dy, roof.x() - probe.x(), roof.y() - probe.y()) or ""
         if not side:
             continue
-        per_side[(street, side)].append((dist, num, f.id()))
+        _geometry, length, start = m.segs[seg_fid]
+        numbering_dist = start + m.numbering_fraction(seg_fid, frac) * length
+        per_side[(street, side)].append((numbering_dist, num, f.id()))
         if seg_fid not in segments:
             segments[seg_fid] = next(ctx.rcl.getFeatures(QgsFeatureRequest().setFilterFid(seg_fid)), None)
         seg = segments[seg_fid]

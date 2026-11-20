@@ -26,7 +26,7 @@ class AddressDialog(NormalDialog):
         side = "left" if plan.side == "L" else "right"
         lay.addWidget(QLabel(f"<b>{res.label or '?'} {plan.full_name}</b>"))
         lay.addWidget(hint(f"{side} side ({'odd' if plan.parity == 'O' else 'even' if plan.parity == 'E' else 'any'})"
-                           f", {plan.distance_m:.0f} m from the start of this segment"
+                           f", {plan.distance_m:.0f} m from this segment's numbering origin"
                            + (f" (raw {res.raw:.1f})" if res.raw is not None else "")))
         form = QFormLayout()
         row = QHBoxLayout()

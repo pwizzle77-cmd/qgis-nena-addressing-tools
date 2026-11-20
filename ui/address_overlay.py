@@ -3,7 +3,7 @@
 Selection overlay: while address points are selected, show where each was
 addressed on the road (a buffered circle on the centerline at its access
 point), a dashed line to the rooftop and the number. Canvas items only –
-nothing is written. Cleared when the selection is cleared.
+nothing is written. Cleared when the selection is cleared or an address is deleted.
 
 Colours: blue = access point on its street's centerline; red = the road has
 moved away from the stored access point; hollow grey = no stored access
@@ -59,6 +59,7 @@ class AddressOverlay:
         self.iface = iface
         self.canvas = iface.mapCanvas()
         self.items = []
+        self._items_by_fid = {}
         self.layer = None
         self.canvas.extentsChanged.connect(self._reposition)
         self.refresh()
@@ -73,6 +74,7 @@ class AddressOverlay:
         # don't even read its signal through a stale handle.
         if alive(self.layer):
             safe_disconnect(self.layer, self.layer.selectionChanged, self._on_selection)
+            safe_disconnect(self.layer, self.layer.featureDeleted, self.clear)
         self.layer = None
 
     def refresh(self, *args):
@@ -85,15 +87,19 @@ class AddressOverlay:
         self.layer = layer_for(pcfg.streets, "address")
         if self.layer is not None:
             self.layer.selectionChanged.connect(self._on_selection)
+            self.layer.featureDeleted.connect(self.clear)
             self._on_selection()
 
-    def clear(self):
-        for it in self.items:
+    def clear(self, fid=None):
+        items = self.items if fid is None else self._items_by_fid.pop(fid, [])
+        for it in items:
             try:
                 self.canvas.scene().removeItem(it)
             except (RuntimeError, AttributeError):
                 pass
-        self.items = []
+        self.items = [it for it in self.items if it not in items]
+        if fid is None:
+            self._items_by_fid.clear()
 
     def _reposition(self):
         for it in self.items:
@@ -127,7 +133,9 @@ class AddressOverlay:
         for n, f in enumerate(ctx.addr.getFeatures(QgsFeatureRequest().setFilterFids(list(ids)))):
             if n >= limit or not f.hasGeometry():
                 break
+            first = len(self.items)
             self._draw(ctx, f, upp, expect)
+            self._items_by_fid[f.id()] = self.items[first:]
 
     def _draw(self, ctx, f, upp, expect):
         roof = ctx.from_addr.transform(E._pt(f.geometry()))

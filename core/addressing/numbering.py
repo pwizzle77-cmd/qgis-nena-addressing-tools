@@ -9,17 +9,19 @@ The number of a new address comes from where its driveway meets the road
    at the access point;
 2. **raw position** – on the segment that was clicked, by the configured method:
      * ``distance`` (default): the segment's From on that side (or the start
-       number) + distance from the segment's first point ÷ distance per
+       number) + distance from the segment's numbering origin ÷ distance per
        number (e.g. 5.28 ft = 1000 numbers per mile);
      * ``interpolate``: FROM + (TO − FROM) × fraction along the segment's
        range on that side;
      * ``frontage``: the segment's From (or the start number) + step × whole
-       frontage intervals from the segment's first point (e.g. next pair every 50 ft);
+       frontage intervals from its numbering origin (e.g. next pair every 50 ft);
 3. **parity** – rounded (nearest or down) to the side's odd/even;
 4. **order** – kept between the existing addresses on that side of the
    same segment so numbers keep increasing along it;
 5. **collision** – a taken number is resolved by rule: next free number,
    a suffix (101A), or the user is asked.
+
+The numbering origin is the first point, or the final point for OneWay TF.
 """
 
 import math
