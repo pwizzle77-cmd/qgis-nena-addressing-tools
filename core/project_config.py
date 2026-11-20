@@ -125,6 +125,8 @@ class LookupSettings:
     address_type_layer_source: str = ""
     domains_layer_id: str = ""
     domains_layer_source: str = ""
+    # Opening a container must not borrow same-named lookup tables from another database.
+    discover_unassigned: bool = True
 
 
 @dataclass

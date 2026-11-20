@@ -778,6 +778,8 @@ def lookup_layer(pcfg, key: str):
     layer = layer_for(pcfg.lookups, role)
     if layer is not None:
         return layer
+    if not getattr(pcfg.lookups, "discover_unassigned", True):
+        return None
     layer = find_lookup_layer(key)
     if layer is not None:
         remember(pcfg.lookups, role, layer)
@@ -977,7 +979,8 @@ def _widget_type(layer, index) -> str:
         return ""
 
 
-def apply_dropdowns(pcfg, centerline=None, force: bool = False, dry_run: bool = False) -> List[dict]:
+def apply_dropdowns(pcfg, centerline=None, force: bool = False, dry_run: bool = False,
+                    migrate_defaults: bool = True) -> List[dict]:
     """
     Give every bound field its drop-down.
 
@@ -1047,13 +1050,17 @@ def apply_dropdowns(pcfg, centerline=None, force: bool = False, dry_run: bool = 
         entry["status"] = "wired"
     if not dry_run:
         with contextlib.suppress(Exception):
-            sync_defaults(pcfg, centerline)
+            if migrate_defaults:
+                sync_defaults(pcfg, centerline)
+            else:
+                apply_layer_defaults(pcfg, centerline)
     return report
 
 
-def apply_value_relations(pcfg, centerline=None) -> int:
+def apply_value_relations(pcfg, centerline=None, migrate_defaults=True) -> int:
     """Older name. Wires every drop-down and returns how many fields got one."""
-    return sum(1 for row in apply_dropdowns(pcfg, centerline) if row["status"] == "wired")
+    return sum(1 for row in apply_dropdowns(pcfg, centerline, migrate_defaults=migrate_defaults)
+               if row["status"] == "wired")
 
 
 def container_target(layer):

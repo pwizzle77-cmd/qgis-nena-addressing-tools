@@ -83,6 +83,9 @@ class NenaRclPlugin:
                                                  lambda *_: self.show_tab("lookups"), "windows")
         self.act_schema_window = self._add_menu_action("schema.svg", "Schema and import",
                                                        lambda *_: self.show_tab("schema"), "windows")
+        self.act_open_database = self._add_menu_action("schema.svg", "Open existing database…",
+                                                       lambda *_: self._dock().open_schema(), "windows")
+        self.act_open_database.setObjectName("NenaOpenExistingDatabase")
         self.act_settings = self._add_menu_action("settings.svg", "Settings",
                                                   lambda *_: self.show_tab("settings"), "windows")
         self.act_docked = QAction("Dock the NENA windows in the side panel", self.iface.mainWindow())
@@ -558,7 +561,8 @@ class NenaRclPlugin:
         with contextlib.suppress(Exception):  # relations are a convenience, not the save
             from .core.lookups import apply_value_relations
             from .core.project_config import load_project_config
-            apply_value_relations(load_project_config(), self.dock.layer if self.dock is not None else None)
+            apply_value_relations(load_project_config(), self.dock.layer if self.dock is not None else None,
+                                  migrate_defaults=not getattr(self.dock, "_opening_existing", False))
 
     def _project_loaded(self, *args):
         QTimer.singleShot(0, self._refresh_history)

@@ -259,6 +259,10 @@ class NenaDock(QDockWidget):
         b_schema.setToolTip("Create empty NENA road, street, address, driveway, and access-point tables, "
                             "plus the lookup lists, in a GeoPackage, File Geodatabase, or database connection.")
         b_schema.clicked.connect(self.create_schema)
+        b_open = QPushButton("Open existing database…")
+        b_open.setToolTip("Recognize and open existing plugin tables in a GeoPackage, File Geodatabase, "
+                          "or saved QGIS database connection. No tables or data are changed.")
+        b_open.clicked.connect(self.open_schema)
         b_update = QPushButton("Update schema…")
         b_update.setToolTip("Add the fields and tables the plugin uses that your existing tables do not have yet. "
                             "Nothing is removed or replaced, and your data stays.")
@@ -277,6 +281,7 @@ class NenaDock(QDockWidget):
         b_track = QPushButton("Track changes…")
         b_track.setToolTip("Turn change tracking on or off (Settings, Editing)")
         b_track.clicked.connect(lambda *_: self.open_settings("Editing"))
+        box.addWidget(b_open)
         box.addWidget(b_schema)
         box.addWidget(b_update)
         box.addWidget(b_calc)
@@ -500,6 +505,35 @@ class NenaDock(QDockWidget):
                              self._msg(f"Configuration written to {path}", "Success")))
 
     # ------------------------------------------------------------------ schema / import
+    def open_schema(self):
+        if getattr(self, "_schema_busy", False):
+            return
+        dlg = CreateSchemaDialog(self, QgsProject.instance().crs(), self._last_dir(), open_existing=True)
+        if not dlg.exec():
+            return
+        target = dlg.request()["target"]
+
+        def do():
+            from ..core.schema_reader import open_schema
+            rcl_tpl = self.cfg.template or None
+            addr_tpl = load_project_config().addresses.address_template or None
+            opened = open_schema(target, rcl_tpl, addr_tpl)
+            self._opening_existing = True
+            try:
+                self._adopt_schema(opened, target, rcl_tpl, addr_tpl, existing=True)
+            finally:
+                self._opening_existing = False
+            if target.path:
+                self._remember_dir(target.path)
+            self._msg(f"Opened {len(opened)} existing NENA table(s). No tables or data were changed. "
+                      "Save the QGIS project to keep these bindings and settings.", "Success")
+
+        self._schema_busy = True
+        try:
+            self._guard(do)
+        finally:
+            self._schema_busy = False
+
     def create_schema(self):
         self._create_schema(False)
 
@@ -791,42 +825,66 @@ class NenaDock(QDockWidget):
             text += " " + " ".join(result.errors)
         return text
 
-    def _adopt_schema(self, created, target, rcl_tpl, addr_tpl, watch=False):
+    def _adopt_schema(self, created, target, rcl_tpl, addr_tpl, watch=False, existing=False):
         """Add the new layers to the project and point the panel at them."""
         if not created:
             return
         prj = QgsProject.instance()
         if created.get("centerline") is not None:
-            fresh = C.PluginConfig.from_dict(self.collect().to_dict())
-            fresh.mapping = {d.name: d.physical_name for d in centerline_defs(rcl_tpl)}
-            fresh.template = dict(rcl_tpl) if rcl_tpl else {}
-            C.save_to_layer(created["centerline"], fresh)
-        self.streets.store()
-        self.addresses.store()
+            if not existing:
+                fresh = C.PluginConfig.from_dict(self.collect().to_dict())
+                fresh.mapping = {d.name: d.physical_name for d in centerline_defs(rcl_tpl)}
+                fresh.template = dict(rcl_tpl) if rcl_tpl else {}
+                C.save_to_layer(created["centerline"], fresh)
+            elif C.load_from_layer(created["centerline"]) is None:
+                from ..core.schema_reader import field_mapping
+                fresh = C.PluginConfig()
+                fresh.mapping = field_mapping(created["centerline"], "centerline", rcl_tpl, addr_tpl)
+                fresh.template = dict(rcl_tpl) if rcl_tpl else {}
+                C.save_to_layer(created["centerline"], fresh)
+        if not existing:
+            self.streets.store()
+            self.addresses.store()
         pcfg = load_project_config()
         if created.get("centerline") is not None:
             remember(pcfg.streets, "centerline", created["centerline"])
-        if created.get("streets") is not None:
-            remember(pcfg.streets, "master", created["streets"])
+        if existing or created.get("streets") is not None:
+            remember(pcfg.streets, "master", created.get("streets"))
+        if existing:
+            from ..core.schema_reader import field_mapping
+            remember(pcfg.streets, "address", created.get("address"))
+            remember(pcfg.addresses, "driveway", created.get("driveway"))
+            remember(pcfg.addresses, "access", created.get("access"))
+            pcfg.streets.address_mapping = {}
+            pcfg.addresses.driveway_mapping = {}
+            pcfg.lookups.discover_unassigned = False
         if created.get("address") is not None:
             remember(pcfg.streets, "address", created["address"])
             from ..core.streets.names import NAME_PARTS
             wanted = set(NAME_PARTS) | {"StreetID", "DateUpdate"}
             pcfg.streets.address_mapping = {d.name: d.physical_name for d in address_defs(addr_tpl)
                                             if d.name in wanted}
+            if existing:
+                pcfg.streets.address_mapping = {key: value for key, value in
+                    field_mapping(created["address"], "address", rcl_tpl, addr_tpl).items() if key in wanted}
         if created.get("driveway") is not None:
             remember(pcfg.addresses, "driveway", created["driveway"])
             from ..core.schema_pack import driveway_defs
             pcfg.addresses.driveway_mapping = {d.name: d.physical_name for d in driveway_defs()}
+            if existing:
+                pcfg.addresses.driveway_mapping = field_mapping(created["driveway"], "driveway")
         if created.get("access") is not None:
             remember(pcfg.addresses, "access", created["access"])
         from ..core.lookups import LOOKUP_SPECS, apply_value_relations, seed_layer
         for key, _table, _title, role in LOOKUP_SPECS:
             lyr = created.get(key)
             if lyr is None:
+                if existing:
+                    remember(pcfg.lookups, role, None)
                 continue
             remember(pcfg.lookups, role, lyr)
-            seed_layer(lyr, key)
+            if not existing:
+                seed_layer(lyr, key)
         archive_roles = (
             ("centerline", "centerline_archive"),
             ("streets", "streets_archive"),
@@ -838,29 +896,36 @@ class NenaDock(QDockWidget):
         for role, key in archive_roles:
             lyr = created.get(key)
             if lyr is None:
+                if existing:
+                    remember(pcfg.archive, role, None)
                 continue
             remember(pcfg.archive, role, lyr)
             made_archive = True
-        if made_archive:
+        if made_archive and not existing:
             pcfg.archive.enabled = bool(watch)
+        elif existing and not made_archive:
+            pcfg.archive.enabled = False
         from ..core import zones as Z
         zones = Z.load_zones(pcfg.zones.layers)
         for kind in Z.ZONE_KINDS:
             lyr = created.get(f"zone_{kind.key}")
             # A zone layer you already use for this kind (often in its own database) stays the one used.
-            if lyr is None or any(z.kind == kind.key for z in zones):
+            if lyr is None or (not existing and any(z.kind == kind.key for z in zones)):
                 continue
+            if existing:
+                zones = [zone for zone in zones if zone.kind != kind.key]
             zones.append(Z.new_zone(lyr.id(), lyr.source(), kind.key))
         pcfg.zones.layers = Z.dump_zones(zones)
-        if created.get("exceptions") is not None:
-            remember(pcfg.zones, "exceptions", created["exceptions"])
+        if existing or created.get("exceptions") is not None:
+            remember(pcfg.zones, "exceptions", created.get("exceptions"))
         save_project_config(pcfg)
         with contextlib.suppress(Exception):  # the tables exist even if a drop-down cannot be wired yet
-            apply_value_relations(pcfg)
+            if not existing:
+                apply_value_relations(pcfg)
 
         label = os.path.splitext(os.path.basename(target.path))[0] if target.path else (
             target.schema or target.connection or "schema")
-        group = self._schema_group(prj, f"NENA {label}"[:80])
+        group = None
         try:
             self.iface.currentLayerChanged.disconnect(self._follow_active_layer)
         except (TypeError, RuntimeError):
@@ -875,8 +940,12 @@ class NenaDock(QDockWidget):
                 lyr = created.get(key)
                 if lyr is None:
                     continue
-                prj.addMapLayer(lyr, False)
-                group.addLayer(lyr)
+                if prj.mapLayer(lyr.id()) is None:
+                    prj.addMapLayer(lyr, False)
+                if prj.layerTreeRoot().findLayer(lyr.id()) is None:
+                    if group is None:
+                        group = self._schema_group(prj, f"NENA {label}"[:80])
+                    group.addLayer(lyr)
         finally:
             self.iface.currentLayerChanged.connect(self._follow_active_layer)
         self.streets.load()
@@ -885,10 +954,12 @@ class NenaDock(QDockWidget):
         self.zones_settings.load()
         if created.get("centerline") is not None:
             self.cb_layer.setLayer(created["centerline"])
+        if existing:
+            apply_value_relations(pcfg, self.layer, migrate_defaults=False)
         # New layers get the NENA look straight away.
         fresh = {key: created.get(key) for key in ("centerline", "address", "driveway", "access")
                  if created.get(key) is not None}
-        if fresh:
+        if fresh and not existing:
             self.style_layers(only=fresh, ask=False)
         self.sync_archive_option()
         self._hide_support_tables()

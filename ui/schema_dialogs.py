@@ -32,14 +32,23 @@ def _layer_label(layer) -> str:
 class CreateSchemaDialog(NormalDialog):
     """Pick a GeoPackage, File Geodatabase, or database connection and the layers to create."""
 
-    def __init__(self, parent, crs, last_dir, archive_only=False):
+    def __init__(self, parent, crs, last_dir, archive_only=False, open_existing=False):
         super().__init__(parent)
         self._archive_only = bool(archive_only)
+        self._open_existing = bool(open_existing)
         self.setWindowTitle("Create version tables" if self._archive_only else "Create NENA schema")
+        if self._open_existing:
+            self.setWindowTitle("Open existing NENA database")
         self._dir = last_dir or os.path.expanduser("~")
         self._result = None
         lay = QVBoxLayout(self)
-        if self._archive_only:
+        if self._open_existing:
+            intro = ("Open a GeoPackage, File Geodatabase, or saved QGIS database connection already set up "
+                     "for this plugin. Recognized tables are checked and linked without creating tables, "
+                     "changing fields, seeding lookup values, or recalculating data. Loaded field templates "
+                     "are used for matching. Addressing rules are stored in the QGIS project, not the database. "
+                     "Open the original project to recover those rules; save this project to keep its bindings.")
+        elif self._archive_only:
             intro = ("Creates a version table for each layer you check. Each saved insert, update, or delete "
                      "adds one version of that feature, with the old and new values of an update. "
                      "The table has the same fields as the live layer, plus the version columns.")
@@ -56,7 +65,7 @@ class CreateSchemaDialog(NormalDialog):
             ("Database connection (PostgreSQL, SQL Server, Oracle, …)", "conn"),
         ])
         self.cb_kind.currentIndexChanged.connect(lambda *_: self._show_kind())
-        form.addRow("Destination", self.cb_kind)
+        form.addRow("Source" if self._open_existing else "Destination", self.cb_kind)
 
         self.ed_path = QLineEdit()
         self.ed_path.setPlaceholderText(r"C:\data\nena.gpkg")
@@ -84,16 +93,23 @@ class CreateSchemaDialog(NormalDialog):
         self._form = form
         self.lbl_schema_hint = hint("The database schema is created when it is not already there. "
                                     "Leave it empty when the connection has no schema (SpatiaLite).")
+        if self._open_existing:
+            self.lbl_schema_hint.setText("Select the existing database schema. No database schema is created.")
         lay.addWidget(self.lbl_schema_hint)
 
         form2 = QFormLayout()
         self.ed_prefix = QLineEdit()
         self.ed_prefix.setPlaceholderText("optional, for example ng911")
+        if self._open_existing:
+            self.ed_prefix.setPlaceholderText("automatic when unique; enter a prefix to choose one of several schemas")
         self.ed_prefix.textChanged.connect(lambda *_: self._refresh_names())
         form2.addRow("Table prefix", self.ed_prefix)
         self.crs_widget = QgsProjectionSelectionWidget(self)
         self.crs_widget.setCrs(crs)
         form2.addRow("CRS", self.crs_widget)
+        if self._open_existing:
+            form2.labelForField(self.crs_widget).hide()
+            self.crs_widget.hide()
         lay.addLayout(form2)
 
         self.chk_replace = QCheckBox("Replace tables that already exist")
@@ -133,10 +149,13 @@ class CreateSchemaDialog(NormalDialog):
             self._checks.append((cb, spec))
             box_lay.addWidget(cb)
         lay.addWidget(box)
+        if self._open_existing:
+            for widget in (self.chk_replace, self.chk_archive, self.chk_watch, self.lbl_archive, box):
+                widget.hide()
         self._refresh_names()
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Create")
+        buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Open" if self._open_existing else "Create")
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         lay.addWidget(buttons)
@@ -198,11 +217,15 @@ class CreateSchemaDialog(NormalDialog):
             if not path:
                 return
             if not path.lower().endswith(".gdb"):
+                if self._open_existing:
+                    QMessageBox.warning(self, TITLE, "Select the existing folder ending in .gdb.")
+                    return
                 path = os.path.join(path, "nena.gdb")
             self.ed_path.setText(path)
             return
-        path, _ = QFileDialog.getSaveFileName(self, "GeoPackage", os.path.join(self._dir, "nena.gpkg"),
-                                              "GeoPackage (*.gpkg)")
+        picker = QFileDialog.getOpenFileName if self._open_existing else QFileDialog.getSaveFileName
+        path, _ = picker(self, "GeoPackage", self._dir if self._open_existing else os.path.join(self._dir, "nena.gpkg"),
+                         "GeoPackage (*.gpkg)")
         if path:
             self.ed_path.setText(path)
 
@@ -232,7 +255,7 @@ class CreateSchemaDialog(NormalDialog):
             return
         kind = self.cb_kind.currentData()
         spatial = any(spec.wkb != "None" for cb, spec in self._checks if cb.isChecked() and spec.key in keys)
-        if spatial and not self.crs_widget.crs().isValid():
+        if spatial and not self._open_existing and not self.crs_widget.crs().isValid():
             QMessageBox.warning(self, TITLE, "Choose a coordinate reference system.")
             return
         if kind == "conn":

@@ -901,6 +901,23 @@ Open **NENA ▾ → Settings**, or the **Settings…** button on any tool window
 
 Open **NENA ▾ → Schema and import**.
 
+### Open a database already set up by this plugin
+
+Choose **NENA ▾ → Open existing database…**, or **Open existing database…** in **Schema and import**.
+Select an existing `.gpkg`, `.gdb` folder, or saved QGIS database connection and its database schema.
+The table prefix is detected when there is one RoadCenterline table; enter a prefix if several sets share the database.
+
+The plugin checks geometry, coordinate systems, required fields, and field types before adding any layers.
+RoadCenterline is required. Street names, addresses, driveways, access points, lookup lists, version tables,
+zones, and check exceptions are connected when present; optional tables and newer optional fields may be absent.
+Extra unrelated tables are ignored. An incompatible recognized table produces a report of what needs fixing.
+Tables already loaded from the same source are reused, including pending edits.
+
+Opening does not create or replace tables, seed lookup rows, recalculate addresses, or alter database records.
+Save the QGIS project to retain the layer bindings. **Addressing rules, field templates, and other project settings
+are stored in the QGIS project, not the database.** Open the original project to recover those settings;
+when opening a database in a new project, review **Settings** before editing or assigning addresses.
+
 ### Create a fresh set of NENA tables
 
 Click **Create schema** and choose where the tables go:
