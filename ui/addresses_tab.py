@@ -5,8 +5,9 @@ import os
 
 from qgis.core import QgsMessageLog, QgsProject
 from qgis.gui import QgsMapLayerComboBox
-from qgis.PyQt.QtCore import pyqtSignal
-from qgis.PyQt.QtWidgets import (QCheckBox, QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox,
+from qgis.PyQt.QtCore import Qt, pyqtSignal
+from qgis.PyQt.QtGui import QBrush, QColor
+from qgis.PyQt.QtWidgets import (QAbstractItemView, QCheckBox, QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox,
                                  QHBoxLayout, QHeaderView, QInputDialog, QLabel, QMenu, QMessageBox, QPushButton,
                                  QSpinBox, QTableWidgetItem, QVBoxLayout, QWidget)
 
@@ -20,10 +21,13 @@ from ..core.addressing.reports import addresses_by_community_report, streets_rep
 from ..core.addressing.ssap import PLACEMENT_VALUES, SSAP_FIELDS
 from ..core.layer_access import ConfigError
 from ..core.project_config import layer_for, load_project_config, remember, save_project_config
+from ..core.rules import ERROR, INFO, WARNING
 from ..core.streets.service import StreetService
 from ..core import template as T
 from .street_dialogs import IssuesDialog
-from .widgets import PARITY_ITEMS, BoundedTable, FittingScroll, combo, hint, set_combo_data
+from .widgets import PARITY_ITEMS, BoundedTable, FittingScroll, combo, hint, page_into, set_combo_data
+
+SEV_COLORS = {ERROR: QColor(231, 76, 60, 60), WARNING: QColor(243, 156, 18, 60), INFO: QColor(52, 152, 219, 40)}
 
 try:
     from qgis.core import Qgis
@@ -561,3 +565,125 @@ class AddressesTab(QWidget):
                 n = addresses_by_community_report(path, self.context())
                 self.dock._msg(f"{n} address(es) summarised in {path}", "Success")
         self.dock._guard(do)
+
+
+class AddressResultsPage(QWidget):
+    """Addresses tab of the Check window: range, side, order, duplicates, boundaries,
+    street type/ZIP format, and address-vs-centerline attribute mismatches."""
+
+    COLUMNS = ["Severity", "Layer", "FID", "Code", "Side", "Message"]
+
+    def __init__(self, dock, parent=None):
+        super().__init__(parent)
+        self.dock = dock
+        self.issues_by_role = {}
+        self._layers = {}
+        lay = page_into(self)
+        row = QHBoxLayout()
+        b = QPushButton("Check addresses")
+        b.setToolTip("Range, side, order, duplicates (incl. same location), boundaries, street type/ZIP "
+                     "format, and attribute mismatches against the centerline")
+        b.clicked.connect(lambda *_: self.run())
+        row.addWidget(b)
+        b = QPushButton("Settings…")
+        b.clicked.connect(lambda *_: self.dock.open_settings("Address rules"))
+        row.addWidget(b)
+        row.addStretch(1)
+        lay.addLayout(row)
+        top = QHBoxLayout()
+        self.lbl = QLabel("Not run yet.")
+        self.lbl.setWordWrap(True)
+        top.addWidget(self.lbl, 1)
+        self.cb_filter = combo([("All", ""), ("Errors", ERROR), ("Warnings", WARNING), ("Info", INFO)])
+        self.cb_filter.currentIndexChanged.connect(self._fill)
+        top.addWidget(self.cb_filter)
+        lay.addLayout(top)
+        self.table = BoundedTable(0, len(self.COLUMNS), min_height=120, max_height=280)
+        self.table.setHorizontalHeaderLabels(self.COLUMNS)
+        self.table.verticalHeader().setVisible(False)
+        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.table.setSortingEnabled(True)
+        hh = self.table.horizontalHeader()
+        for c in range(len(self.COLUMNS) - 1):
+            hh.setSectionResizeMode(c, QHeaderView.ResizeMode.ResizeToContents)
+        hh.setSectionResizeMode(len(self.COLUMNS) - 1, QHeaderView.ResizeMode.Stretch)
+        self.table.itemDoubleClicked.connect(lambda *_: self.zoom())
+        lay.addWidget(self.table, 1)
+        row = QHBoxLayout()
+        for text, tip, slot in (("Select", "Select the features in the listed results", self.select),
+                                ("Zoom", "Zoom to the selected results", self.zoom)):
+            b = QPushButton(text)
+            b.setToolTip(tip)
+            b.clicked.connect(lambda *_, s=slot: s())
+            row.addWidget(b)
+        lay.addLayout(row)
+        lay.addStretch(1)
+
+    # ------------------------------------------------------------------
+    def run(self):
+        def do():
+            ctx = self.dock.addresses.context()
+            self._layers = {"address": ctx.addr, "centerline": ctx.rcl}
+            self.issues_by_role = {"address": address_issues(ctx),
+                                   "centerline": centerline_boundary_issues(ctx)}
+            self._fill()
+        self.dock._guard(do)
+
+    def _visible(self):
+        sev = self.cb_filter.currentData()
+        return [(role, i) for role, items in self.issues_by_role.items() for i in items
+               if not sev or i.severity == sev]
+
+    def _fill(self, *args):
+        rows = self._visible()
+        total = sum(len(v) for v in self.issues_by_role.values())
+        if not self.issues_by_role:
+            self.lbl.setText("Not run yet.")
+        elif not total:
+            self.lbl.setText("<b style='color:#27ae60'>No issues found.</b>")
+        else:
+            counts = {s: sum(1 for items in self.issues_by_role.values() for i in items if i.severity == s)
+                     for s in (ERROR, WARNING, INFO)}
+            self.lbl.setText(f"<b>{counts[ERROR]}</b> errors, <b>{counts[WARNING]}</b> warnings, "
+                             f"{counts[INFO]} info")
+        self.table.setSortingEnabled(False)
+        self.table.setRowCount(len(rows))
+        for r, (role, i) in enumerate(rows):
+            vals = [i.severity, role, "" if i.fid is None else i.fid, i.code, i.side, i.message]
+            for c, val in enumerate(vals):
+                it = QTableWidgetItem()
+                if c == 2 and val != "":
+                    it.setData(Qt.ItemDataRole.DisplayRole, int(val))
+                else:
+                    it.setText(str(val))
+                it.setData(Qt.ItemDataRole.UserRole, (role, i.fid))
+                if c == 0:
+                    it.setBackground(QBrush(SEV_COLORS.get(i.severity, QColor(0, 0, 0, 0))))
+                if c == len(self.COLUMNS) - 1:
+                    it.setToolTip(i.message)
+                self.table.setItem(r, c, it)
+        self.table.setSortingEnabled(True)
+
+    def _selected(self):
+        picked = {}
+        for idx in self.table.selectionModel().selectedRows():
+            role, fid = self.table.item(idx.row(), 0).data(Qt.ItemDataRole.UserRole)
+            if fid is not None:
+                picked.setdefault(role, []).append(fid)
+        return picked
+
+    def select(self):
+        for role, fids in self._selected().items():
+            layer = self._layers.get(role)
+            if layer is not None:
+                layer.selectByIds(fids)
+
+    def zoom(self):
+        self.select()
+        canvas = self.dock.iface.mapCanvas()
+        layers = [self._layers[role] for role in self._selected() if self._layers.get(role) is not None]
+        if not layers:
+            return
+        canvas.zoomToSelected(layers[0])
+        canvas.refresh()

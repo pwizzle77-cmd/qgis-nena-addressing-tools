@@ -43,8 +43,9 @@ from .mapping_tab import MappingTab
 from .ranging_tab import RangingTab
 from .settings_tab import SettingsTab
 from .streets_tab import StreetsTab
-from .addresses_tab import AddressesTab
+from .addresses_tab import AddressesTab, AddressResultsPage
 from .schema_dialogs import CreateSchemaDialog, ImportDialog
+from .ranging_dialogs import RedistributeMethodDialog
 from .validation_tab import ValidationTab
 from .lookup_window import LookupPage
 from .widgets import FittingScroll, Surface, hint, host_groups, page_into
@@ -103,6 +104,8 @@ class NenaDock(QDockWidget):
         self.zones_settings = ZonesSettingsPage(self)
         self.zone_results = ZoneResultsPage(self)
         self.validation.pages.addTab(self.zone_results, "Zones")
+        self.address_results = AddressResultsPage(self)
+        self.validation.pages.addTab(self.address_results, "Addresses")
         self.ranging.manual_slot.addWidget(self.edit.manual_group)
         self.versions_group = self._versions_group()
         self.schema_page = self._project_page()
@@ -1085,7 +1088,10 @@ class NenaDock(QDockWidget):
         self._guard(do)
 
     def redistribute_selected(self):
-        self.run_ranging(True, {"method": C.M_PROPORTIONAL, "proportional_source": C.PROP_EXISTING,
+        dlg = RedistributeMethodDialog(self, self.cfg.ranging.method)
+        if not dlg.exec():
+            return
+        self.run_ranging(True, {"method": dlg.method(), "proportional_source": C.PROP_EXISTING,
                                 "scope": C.SCOPE_CHAIN, "overwrite_existing": True},
                          command="NENA: redistribute ranges")
 
