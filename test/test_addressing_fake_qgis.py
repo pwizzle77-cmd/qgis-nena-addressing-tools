@@ -301,6 +301,36 @@ def test_address_checks(world):
     assert ("ATTRIB_MISMATCH", ids[0]) in {(i.code, i.fid) for i in address_issues(ctx)}
 
 
+def _addr_point(addr, attrs, x, y):
+    fid = addr.add_committed(attrs, None)
+    addr._feats[fid].setGeometry(QgsGeometry.fromPointXY(QgsPointXY(x, y)))
+    addr._committed[fid] = addr._feats[fid]
+    return fid
+
+
+def test_street_type_abbreviation_is_flagged(world):
+    # The fixture's own master street name uses "St" for "Main Street".
+    ctx, addr = world["ctx"], world["addr"]
+    fid = E.commit_address(ctx, E.plan_address(ctx, P(20, 0), P(20, 20)), 121, create_driveway=False)["address"]
+    assert ("ADDR_STREET_TYPE_ABBREVIATED", fid) in {(i.code, i.fid) for i in address_issues(ctx)}
+
+
+def test_zip_format_is_flagged(world):
+    ctx, addr = world["ctx"], world["addr"]
+    attrs = [1, None, None, None, None, None, None, None, None, None, None, None, "1234", None, None, None, None]
+    fid = _addr_point(addr, attrs, 20, 0)
+    assert ("ADDR_ZIP_FORMAT", fid) in {(i.code, i.fid) for i in address_issues(ctx)}
+
+
+def test_duplicate_location_is_flagged(world):
+    ctx, addr = world["ctx"], world["addr"]
+    f1 = _addr_point(addr, [1] + [None] * 16, 20, 0)
+    f2 = _addr_point(addr, [2] + [None] * 16, 20, 0)
+    codes = {(i.code, i.fid) for i in address_issues(ctx)}
+    assert ("ADDR_DUPLICATE_LOCATION", f1) in codes
+    assert ("ADDR_DUPLICATE_LOCATION", f2) in codes
+
+
 def _box(lyr, attrs, ring):
     fid = lyr.add_committed(attrs, None)
     lyr._feats[fid].setGeometry(QgsGeometry.fromPolygonXY([ring]))

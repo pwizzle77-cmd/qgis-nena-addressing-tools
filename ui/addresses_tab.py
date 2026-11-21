@@ -70,7 +70,8 @@ class AddressesTab(QWidget):
         lay.addLayout(row)
         row = QHBoxLayout()
         for text, slot, tip in (("Undo last", self.undo, "Remove the last address and the access point made with it"),
-                                ("Check", self.check, "Range, side, order, duplicates, boundaries"),
+                                ("Check", self.check,
+                 "Range, side, order, duplicates (incl. same location), boundaries, street type/ZIP format"),
                                 ("Settings…", lambda: self.dock.open_settings("Address rules"),
                                  "The address layers, numbering, and what new addresses get")):
             b = QPushButton(text)

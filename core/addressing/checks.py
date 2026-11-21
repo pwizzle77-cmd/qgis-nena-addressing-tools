@@ -1,15 +1,17 @@
 # -*- coding: utf-8 -*-
 """Address validation: empty fields, range, side/parity, order, duplicates, access point, boundary attribution."""
 
+import re
 from collections import defaultdict
 from typing import Dict, List
 
 from qgis.core import QgsFeatureRequest, QgsPointXY
 
 from ..ranging import matches_parity, normalize_parity
-from ..rules import ERROR, WARNING, Issue
+from ..rules import ERROR, WARNING, Issue, check_directional
 from ..schema import SIDE_FIELDS
 from ..streets import names as N
+from ..streets.street_types import OFFICIAL_BY_UPPER, TYPE_ABBREVIATIONS
 from . import numbering as NB
 from .engine import (AddressContext, StreetMeasure, _pt, attribute_centerline_sides, community_from_segment,
                      parse_number, stored_access)
@@ -20,6 +22,39 @@ from .ssap import COMMUNITY_FIELDS, SSAP_FIELDS
 _ALSO_REQUIRED = ("AddressStatus", "AddressType", "Placement")
 # Filled by the plugin itself or checked elsewhere (number, street).
 _NOT_CHECKED = {"Add_Number", "DateUpdate"}
+_ZIP5_RE = re.compile(r"^\d{5}$")
+_ZIP4_RE = re.compile(r"^\d{4}$")
+
+
+def _type_issue(fid, field_name, value) -> List[Issue]:
+    """Street pre/post type abbreviated instead of spelled out (e.g. 'St' for 'Street').
+
+    A value the registry does not recognise at all is left alone: agencies
+    can and do add local street types (see streets/street_types.py).
+    """
+    v = N.clean(value)
+    key = v.upper().replace(".", "")
+    if not key or key in OFFICIAL_BY_UPPER:
+        return []
+    fix = TYPE_ABBREVIATIONS.get(key)
+    if not fix:
+        return []
+    spelled = OFFICIAL_BY_UPPER.get(fix, fix.title())
+    return [Issue(fid, WARNING, "ADDR_STREET_TYPE_ABBREVIATED",
+                  f"{field_name} '{v}' must be spelled out ('{spelled}')")]
+
+
+def _zip_issues(fid, acc, f) -> List[Issue]:
+    out = []
+    if acc.has("Post_Code"):
+        v = N.clean(acc.get(f, "Post_Code"))
+        if v and not _ZIP5_RE.match(v):
+            out.append(Issue(fid, WARNING, "ADDR_ZIP_FORMAT", f"Post_Code '{v}' is not a 5-digit ZIP code"))
+    if acc.has("Post_Code4"):
+        v = N.clean(acc.get(f, "Post_Code4"))
+        if v and not _ZIP4_RE.match(v):
+            out.append(Issue(fid, WARNING, "ADDR_ZIP4_FORMAT", f"Post_Code4 '{v}' is not a 4-digit ZIP+4 extension"))
+    return out
 
 
 def empty_required_fields(acc, feature) -> List[str]:
@@ -52,6 +87,7 @@ def address_issues(ctx: AddressContext, check_attribution: bool = True) -> List[
     measures: Dict[str, StreetMeasure] = {}
     segments: Dict = {}                      # centerline features already read, by id
     seen = defaultdict(list)
+    by_point = defaultdict(list)             # rounded (x, y) -> [fid] - duplicate locations
     per_side = defaultdict(list)            # (street, side) -> [(distance, number, fid)]
     access_tol = ctx.tol * 4
     try:
@@ -66,6 +102,15 @@ def address_issues(ctx: AddressContext, check_attribution: bool = True) -> List[
         empty = empty_required_fields(acc, f)
         if empty:
             out.append(Issue(f.id(), WARNING, "ADDR_EMPTY_FIELDS", empty_fields_message(empty, fillable)))
+        roof = ctx.from_addr.transform(_pt(f.geometry()))
+        by_point[(round(roof.x() / ctx.tol), round(roof.y() / ctx.tol))].append(f.id())
+        for field_name in ("St_PreDir", "St_PosDir"):
+            if acc.has(field_name):
+                out.extend(check_directional(f.id(), field_name, acc.get(f, field_name)))
+        for field_name in ("St_PreTyp", "St_PosTyp"):
+            if acc.has(field_name):
+                out.extend(_type_issue(f.id(), field_name, acc.get(f, field_name)))
+        out.extend(_zip_issues(f.id(), acc, f))
         num, suf = parse_number(acc.get(f, "Add_Number"), acc.get(f, "AddNum_Suf") if acc.has("AddNum_Suf") else None)
         sid = N.clean(acc.get(f, "StreetID")) if acc.has("StreetID") else ""
         parts = {p: acc.get(f, p) for p in N.NAME_PARTS}
@@ -86,7 +131,6 @@ def address_issues(ctx: AddressContext, check_attribution: bool = True) -> List[
             out.append(Issue(f.id(), WARNING, "ADDR_STREET_NOT_ON_MAP",
                              f"No centerline carries the street of {num}{suf} {N.full_name(parts)}"))
             continue
-        roof = ctx.from_addr.transform(_pt(f.geometry()))
         access = stored_access(ctx, f)
         probe = access or roof
         loc = m.locate(QgsPointXY(probe))
@@ -143,6 +187,12 @@ def address_issues(ctx: AddressContext, check_attribution: bool = True) -> List[
             for fid in fids:
                 out.append(Issue(fid, ERROR, "ADDR_DUPLICATE",
                                  f"{num}{suf}{' unit ' + unit if unit else ''} appears {len(fids)} times on this street",
+                                 related_fid=[x for x in fids if x != fid][0]))
+    for fids in by_point.values():
+        if len(fids) > 1:
+            for fid in fids:
+                out.append(Issue(fid, WARNING, "ADDR_DUPLICATE_LOCATION",
+                                 f"{len(fids)} address points sit at the same location",
                                  related_fid=[x for x in fids if x != fid][0]))
     for (street, side), rows in per_side.items():
         rows.sort()
