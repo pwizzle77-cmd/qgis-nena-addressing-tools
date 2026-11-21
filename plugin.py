@@ -119,9 +119,9 @@ class NenaRclPlugin:
         self.act_redistribute = self._add_action("redistribute.svg", "Redistribute ranges across selected segments",
                                                  lambda *_: self._dock().redistribute_selected(), "centerline",
                                                  short="Redistribute")
-        self.act_validate = self._add_action("validate.svg", "Validate centerline layer",
-                                             lambda *_: self._dock().run_validation(False), "centerline",
-                                             short="Validate")
+        self.act_validate = self._add_action("validate.svg", "Open Check (validate centerline layer)",
+                                             lambda *_: self._dock().open_page(self._dock().validation),
+                                             "centerline", short="Validate")
         self.act_reverse = self._add_action("reverse.svg",
                                             "Reverse the direction of the selected centerlines (sides and ranges "
                                             "follow, so every house keeps its number)",
