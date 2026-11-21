@@ -331,6 +331,35 @@ def test_duplicate_location_is_flagged(world):
     assert ("ADDR_DUPLICATE_LOCATION", f2) in codes
 
 
+def test_duplicate_location_allows_distinct_units(world):
+    # Two apartments in the same building share one point - not a digitizing error.
+    ctx, addr = world["ctx"], world["addr"]
+    a1 = [1, None, None, None, None, None, None, None, None, None, "APT A"] + [None] * 6
+    a2 = [1, None, None, None, None, None, None, None, None, None, "APT B"] + [None] * 6
+    f1 = _addr_point(addr, a1, 20, 0)
+    f2 = _addr_point(addr, a2, 20, 0)
+    codes = {(i.code, i.fid) for i in address_issues(ctx)}
+    assert ("ADDR_DUPLICATE_LOCATION", f1) not in codes
+    assert ("ADDR_DUPLICATE_LOCATION", f2) not in codes
+
+
+def test_side_mismatch_is_flagged(world):
+    ctx, addr = world["ctx"], world["addr"]
+    fid = E.commit_address(ctx, E.plan_address(ctx, P(20, 0), P(20, 20)), 121, create_driveway=False)["address"]
+    wrong_side = "R" if attr(addr, fid, "Addr_Side") == "L" else "L"
+    idx = addr.fields().lookupField("Addr_Side")
+    addr.changeAttributeValues(fid, {idx: wrong_side})
+    assert ("ADDR_SIDE_MISMATCH", fid) in {(i.code, i.fid) for i in address_issues(ctx)}
+
+
+def test_address_issues_reports_progress(world):
+    ctx, addr = world["ctx"], world["addr"]
+    E.commit_address(ctx, E.plan_address(ctx, P(20, 0), P(20, 20)), 121, create_driveway=False)
+    seen = []
+    address_issues(ctx, progress=seen.append)
+    assert seen and seen[-1] == 100.0
+
+
 def _box(lyr, attrs, ring):
     fid = lyr.add_committed(attrs, None)
     lyr._feats[fid].setGeometry(QgsGeometry.fromPolygonXY([ring]))

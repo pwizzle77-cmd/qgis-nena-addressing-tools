@@ -38,6 +38,7 @@ from ..core.schema_writer import SchemaCreateError, create_schema, list_existing
 from ..core.centerline_pick import excluded_layers, not_a_centerline, preferred_centerline
 from ..core.split_handler import apply_split_policies
 from ..core.validator import Validator, export_csv, issues_layer
+from ..core.addressing.checks import centerline_boundary_issues
 from .edit_tab import EditTab
 from .mapping_tab import MappingTab
 from .ranging_tab import RangingTab
@@ -1239,14 +1240,25 @@ class NenaDock(QDockWidget):
             self._persist()
             v = Validator(layer, self.cfg)
             issues = self._with_progress(lambda cb: v.run(selected_only, cb))
-            if issues is not None:
-                self.validation.set_issues(issues)
-                self.open_page(self.validation)
-                if self.cfg.validation.select_overlaps and self.cfg.validation.check_overlaps:
-                    fids = V.overlap_fids(issues)
-                    if fids:
-                        layer.selectByIds(fids)
-                        self._msg(f"{len(fids)} feature(s) with overlapping address ranges selected.", "Warning")
+            if issues is None:
+                return
+            try:
+                ctx = self.addresses.context()
+            except ConfigError:
+                ctx = None
+            if ctx is not None:
+                boundary = centerline_boundary_issues(ctx)
+                if selected_only:
+                    scope = set(layer.selectedFeatureIds())
+                    boundary = [i for i in boundary if i.fid in scope]
+                issues = V.sort_issues(issues + boundary)
+            self.validation.set_issues(issues)
+            self.open_page(self.validation)
+            if self.cfg.validation.select_overlaps and self.cfg.validation.check_overlaps:
+                fids = V.overlap_fids(issues)
+                if fids:
+                    layer.selectByIds(fids)
+                    self._msg(f"{len(fids)} feature(s) with overlapping address ranges selected.", "Warning")
         self._guard(do)
 
     def find_overlaps(self, selected_only: bool = False):

@@ -81,13 +81,13 @@ def empty_fields_message(empty, fillable) -> str:
     return "Empty: " + "; ".join(bits)
 
 
-def address_issues(ctx: AddressContext, check_attribution: bool = True) -> List[Issue]:
+def address_issues(ctx: AddressContext, check_attribution: bool = True, progress=None) -> List[Issue]:
     acc = ctx.addr_acc
     out: List[Issue] = []
     measures: Dict[str, StreetMeasure] = {}
     segments: Dict = {}                      # centerline features already read, by id
     seen = defaultdict(list)
-    by_point = defaultdict(list)             # rounded (x, y) -> [fid] - duplicate locations
+    by_point = defaultdict(list)             # rounded (x, y) -> [(fid, unit)] - duplicate locations
     per_side = defaultdict(list)            # (street, side) -> [(distance, number, fid)]
     access_tol = ctx.tol * 4
     try:
@@ -95,7 +95,11 @@ def address_issues(ctx: AddressContext, check_attribution: bool = True) -> List[
         fillable = {k for k, v in field_defaults(ctx.pcfg, "address").items() if v}
     except Exception:  # noqa: BLE001 - the hint is a convenience
         fillable = set()
-    for f in list(ctx.addr.getFeatures()):
+    feats = list(ctx.addr.getFeatures())
+    total = max(len(feats), 1)
+    for pos, f in enumerate(feats):
+        if progress is not None and pos % 200 == 0:
+            progress(100.0 * pos / total)
         if not f.hasGeometry():
             out.append(Issue(f.id(), ERROR, "ADDR_NO_GEOMETRY", "Address point has no geometry"))
             continue
@@ -103,7 +107,8 @@ def address_issues(ctx: AddressContext, check_attribution: bool = True) -> List[
         if empty:
             out.append(Issue(f.id(), WARNING, "ADDR_EMPTY_FIELDS", empty_fields_message(empty, fillable)))
         roof = ctx.from_addr.transform(_pt(f.geometry()))
-        by_point[(round(roof.x() / ctx.tol), round(roof.y() / ctx.tol))].append(f.id())
+        unit = N.clean(acc.get(f, "Unit")).upper() if acc.has("Unit") else ""
+        by_point[(round(roof.x() / ctx.tol), round(roof.y() / ctx.tol))].append((f.id(), unit))
         for field_name in ("St_PreDir", "St_PosDir"):
             if acc.has(field_name):
                 out.extend(check_directional(f.id(), field_name, acc.get(f, field_name)))
@@ -122,7 +127,6 @@ def address_issues(ctx: AddressContext, check_attribution: bool = True) -> List[
         if not street:
             out.append(Issue(f.id(), WARNING, "ADDR_NO_STREET", f"Address {num}{suf} has no street"))
             continue
-        unit = N.clean(acc.get(f, "Unit")).upper() if acc.has("Unit") else ""
         seen[(street, num, suf, unit)].append(f.id())
         if street not in measures:
             measures[street] = StreetMeasure(ctx, sid, key)
@@ -140,9 +144,16 @@ def address_issues(ctx: AddressContext, check_attribution: bool = True) -> List[
         if access is not None and sq ** 0.5 > access_tol:
             out.append(Issue(f.id(), WARNING, "ACCESS_OFF_ROAD",
                              "The stored access point is no longer on its street's centerline"))
-        side = N.clean(acc.get(f, "Addr_Side")).upper() if acc.has("Addr_Side") else ""
-        if side not in ("L", "R"):
-            side = NB.side_of(dx, dy, roof.x() - probe.x(), roof.y() - probe.y()) or ""
+        stored_side = N.clean(acc.get(f, "Addr_Side")).upper() if acc.has("Addr_Side") else ""
+        geo_side = NB.side_of(dx, dy, roof.x() - probe.x(), roof.y() - probe.y()) or ""
+        if stored_side in ("L", "R"):
+            side = stored_side
+            if geo_side and geo_side != stored_side:
+                out.append(Issue(f.id(), WARNING, "ADDR_SIDE_MISMATCH",
+                                 f"Addr_Side is '{stored_side}' but {num}{suf} sits geometrically on the "
+                                 f"{geo_side} side of segment {seg_fid}", stored_side, seg_fid))
+        else:
+            side = geo_side
         if not side:
             continue
         _geometry, length, start = m.segs[seg_fid]
@@ -188,12 +199,17 @@ def address_issues(ctx: AddressContext, check_attribution: bool = True) -> List[
                 out.append(Issue(fid, ERROR, "ADDR_DUPLICATE",
                                  f"{num}{suf}{' unit ' + unit if unit else ''} appears {len(fids)} times on this street",
                                  related_fid=[x for x in fids if x != fid][0]))
-    for fids in by_point.values():
-        if len(fids) > 1:
-            for fid in fids:
-                out.append(Issue(fid, WARNING, "ADDR_DUPLICATE_LOCATION",
-                                 f"{len(fids)} address points sit at the same location",
-                                 related_fid=[x for x in fids if x != fid][0]))
+    for entries in by_point.values():
+        if len(entries) < 2:
+            continue
+        units = [u for _fid, u in entries]
+        if "" not in units and len(set(units)) == len(units):
+            continue  # different units of the same building sharing one point - expected
+        fids = [fid for fid, _u in entries]
+        for fid in fids:
+            out.append(Issue(fid, WARNING, "ADDR_DUPLICATE_LOCATION",
+                             f"{len(fids)} address points sit at the same location",
+                             related_fid=[x for x in fids if x != fid][0]))
     for (street, side), rows in per_side.items():
         rows.sort()
         top, top_fid = None, None
@@ -203,6 +219,8 @@ def address_issues(ctx: AddressContext, check_attribution: bool = True) -> List[
                                  f"{num} comes after {top} along the street (side {side})", side, top_fid))
             if top is None or num > top:
                 top, top_fid = num, fid
+    if progress is not None:
+        progress(100.0)
     return out
 
 

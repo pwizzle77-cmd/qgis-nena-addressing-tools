@@ -120,7 +120,7 @@ class ValidationTab(QWidget):
         lay.addLayout(grid)
         lay.addStretch(1)
         self._results_page = results
-        self.pages.addTab(results, "Results")
+        self.pages.addTab(results, "Centerlines")
 
         checks = QWidget()
         clay = page_into(checks)

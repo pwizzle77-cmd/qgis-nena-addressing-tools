@@ -15,7 +15,7 @@ from ..compat import msg_level, point_layer_filter
 from ..core import lookups as LK
 from ..core import tables
 from ..core.addressing import engine as E
-from ..core.addressing.checks import address_issues, centerline_boundary_issues
+from ..core.addressing.checks import address_issues
 from ..core.addressing.layers import create_layer
 from ..core.addressing.reports import addresses_by_community_report, streets_report
 from ..core.addressing.ssap import PLACEMENT_VALUES, SSAP_FIELDS
@@ -24,7 +24,6 @@ from ..core.project_config import layer_for, load_project_config, remember, save
 from ..core.rules import ERROR, INFO, WARNING
 from ..core.streets.service import StreetService
 from ..core import template as T
-from .street_dialogs import IssuesDialog
 from .widgets import PARITY_ITEMS, BoundedTable, FittingScroll, combo, hint, page_into, set_combo_data
 
 SEV_COLORS = {ERROR: QColor(231, 76, 60, 60), WARNING: QColor(243, 156, 18, 60), INFO: QColor(52, 152, 219, 40)}
@@ -75,7 +74,8 @@ class AddressesTab(QWidget):
         row = QHBoxLayout()
         for text, slot, tip in (("Undo last", self.undo, "Remove the last address and the access point made with it"),
                                 ("Check", self.check,
-                 "Range, side, order, duplicates (incl. same location), boundaries, street type/ZIP format"),
+                 "Range, side, order, duplicates (incl. same location), street type/ZIP format, "
+                 "and attribute/side mismatches against the centerline"),
                                 ("Settings…", lambda: self.dock.open_settings("Address rules"),
                                  "The address layers, numbering, and what new addresses get")):
             b = QPushButton(text)
@@ -450,14 +450,11 @@ class AddressesTab(QWidget):
         self.dock._guard(lambda: self.dock._msg(f"Removed {E.undo_last_address()} feature(s).", "Success"))
 
     def check(self):
-        def do():
-            ctx = self.context()
-            issues = {"address": address_issues(ctx), "centerline": centerline_boundary_issues(ctx)}
-            dlg = IssuesDialog(self, issues)
-            layers = {"address": ctx.addr, "centerline": ctx.rcl}
-            dlg.selectRequested.connect(lambda role, fids: layers[role].selectByIds(fids))
-            dlg.exec()
-        self.dock._guard(do)
+        """Run the same check as the Addresses tab of the Check window, and show it there
+        (it has a progress bar and a filter the old pop-up dialog did not)."""
+        self.dock.open_page(self.dock.validation)
+        self.dock.validation.pages.setCurrentWidget(self.dock.address_results)
+        self.dock.address_results.run()
 
     def fill_empty(self):
         def do():
@@ -568,21 +565,21 @@ class AddressesTab(QWidget):
 
 
 class AddressResultsPage(QWidget):
-    """Addresses tab of the Check window: range, side, order, duplicates, boundaries,
-    street type/ZIP format, and address-vs-centerline attribute mismatches."""
+    """Addresses tab of the Check window: range, side, order, duplicates (incl. same
+    location), street type/ZIP format, and attribute/side mismatches against the centerline."""
 
-    COLUMNS = ["Severity", "Layer", "FID", "Code", "Side", "Message"]
+    COLUMNS = ["Severity", "FID", "Code", "Side", "Message"]
 
     def __init__(self, dock, parent=None):
         super().__init__(parent)
         self.dock = dock
-        self.issues_by_role = {}
-        self._layers = {}
+        self.issues = []
+        self._addr_layer = None
         lay = page_into(self)
         row = QHBoxLayout()
         b = QPushButton("Check addresses")
-        b.setToolTip("Range, side, order, duplicates (incl. same location), boundaries, street type/ZIP "
-                     "format, and attribute mismatches against the centerline")
+        b.setToolTip("Range, side, order, duplicates (incl. same location), street type/ZIP "
+                     "format, and attribute/side mismatches against the centerline")
         b.clicked.connect(lambda *_: self.run())
         row.addWidget(b)
         b = QPushButton("Settings…")
@@ -624,40 +621,36 @@ class AddressResultsPage(QWidget):
     def run(self):
         def do():
             ctx = self.dock.addresses.context()
-            self._layers = {"address": ctx.addr, "centerline": ctx.rcl}
-            self.issues_by_role = {"address": address_issues(ctx),
-                                   "centerline": centerline_boundary_issues(ctx)}
+            self._addr_layer = ctx.addr
+            self.issues = self.dock._with_progress(lambda cb: address_issues(ctx, progress=cb))
             self._fill()
         self.dock._guard(do)
 
     def _visible(self):
         sev = self.cb_filter.currentData()
-        return [(role, i) for role, items in self.issues_by_role.items() for i in items
-               if not sev or i.severity == sev]
+        return [i for i in self.issues if not sev or i.severity == sev]
 
     def _fill(self, *args):
         rows = self._visible()
-        total = sum(len(v) for v in self.issues_by_role.values())
-        if not self.issues_by_role:
+        if not self.issues and self._addr_layer is None:
             self.lbl.setText("Not run yet.")
-        elif not total:
+        elif not self.issues:
             self.lbl.setText("<b style='color:#27ae60'>No issues found.</b>")
         else:
-            counts = {s: sum(1 for items in self.issues_by_role.values() for i in items if i.severity == s)
-                     for s in (ERROR, WARNING, INFO)}
+            counts = {s: sum(1 for i in self.issues if i.severity == s) for s in (ERROR, WARNING, INFO)}
             self.lbl.setText(f"<b>{counts[ERROR]}</b> errors, <b>{counts[WARNING]}</b> warnings, "
                              f"{counts[INFO]} info")
         self.table.setSortingEnabled(False)
         self.table.setRowCount(len(rows))
-        for r, (role, i) in enumerate(rows):
-            vals = [i.severity, role, "" if i.fid is None else i.fid, i.code, i.side, i.message]
+        for r, i in enumerate(rows):
+            vals = [i.severity, "" if i.fid is None else i.fid, i.code, i.side, i.message]
             for c, val in enumerate(vals):
                 it = QTableWidgetItem()
-                if c == 2 and val != "":
+                if c == 1 and val != "":
                     it.setData(Qt.ItemDataRole.DisplayRole, int(val))
                 else:
                     it.setText(str(val))
-                it.setData(Qt.ItemDataRole.UserRole, (role, i.fid))
+                it.setData(Qt.ItemDataRole.UserRole, i.fid)
                 if c == 0:
                     it.setBackground(QBrush(SEV_COLORS.get(i.severity, QColor(0, 0, 0, 0))))
                 if c == len(self.COLUMNS) - 1:
@@ -665,25 +658,23 @@ class AddressResultsPage(QWidget):
                 self.table.setItem(r, c, it)
         self.table.setSortingEnabled(True)
 
-    def _selected(self):
-        picked = {}
+    def _selected_fids(self):
+        fids = []
         for idx in self.table.selectionModel().selectedRows():
-            role, fid = self.table.item(idx.row(), 0).data(Qt.ItemDataRole.UserRole)
-            if fid is not None:
-                picked.setdefault(role, []).append(fid)
-        return picked
+            fid = self.table.item(idx.row(), 0).data(Qt.ItemDataRole.UserRole)
+            if fid is not None and fid not in fids:
+                fids.append(fid)
+        return fids
 
     def select(self):
-        for role, fids in self._selected().items():
-            layer = self._layers.get(role)
-            if layer is not None:
-                layer.selectByIds(fids)
+        if self._addr_layer is not None:
+            self._addr_layer.selectByIds(self._selected_fids())
 
     def zoom(self):
-        self.select()
-        canvas = self.dock.iface.mapCanvas()
-        layers = [self._layers[role] for role in self._selected() if self._layers.get(role) is not None]
-        if not layers:
+        fids = self._selected_fids()
+        if self._addr_layer is None or not fids:
             return
-        canvas.zoomToSelected(layers[0])
+        self._addr_layer.selectByIds(fids)
+        canvas = self.dock.iface.mapCanvas()
+        canvas.zoomToSelected(self._addr_layer)
         canvas.refresh()
