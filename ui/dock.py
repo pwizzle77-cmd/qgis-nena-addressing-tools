@@ -7,7 +7,7 @@ to the core engines.
 import contextlib
 import os
 
-from qgis.core import QgsCoordinateReferenceSystem, QgsProject, QgsRectangle, QgsVectorLayer
+from qgis.core import QgsCoordinateReferenceSystem, QgsMessageLog, QgsProject, QgsRectangle, QgsVectorLayer
 from qgis.gui import QgsMapLayerComboBox
 from qgis.PyQt.QtCore import QCoreApplication, QSettings, QSize, Qt, QTimer, pyqtSignal
 from qgis.PyQt.QtWidgets import (QCheckBox, QDockWidget, QFileDialog, QGroupBox, QHBoxLayout, QInputDialog,
@@ -303,14 +303,18 @@ class NenaDock(QDockWidget):
     def cleanup(self):
         try:
             self.iface.currentLayerChanged.disconnect(self._follow_active_layer)
-        except (TypeError, RuntimeError):
-            pass
+        except (TypeError, RuntimeError) as err:
+            QgsMessageLog.logMessage(
+                f"dock.cleanup: currentLayerChanged was already disconnected: {err!r}",
+                TITLE, msg_level("Info"))
         prj = QgsProject.instance()
         for signal in (prj.layersAdded, prj.layersRemoved):
             try:
                 signal.disconnect(self._refresh_centerline_choices)
-            except (TypeError, RuntimeError):
-                pass
+            except (TypeError, RuntimeError) as err:
+                QgsMessageLog.logMessage(
+                    f"dock.cleanup: a layers-changed signal was already disconnected: {err!r}",
+                    TITLE, msg_level("Info"))
 
     # ------------------------------------------------------------------ layer/config
     def _follow_active_layer(self, layer):
@@ -928,8 +932,10 @@ class NenaDock(QDockWidget):
         group = None
         try:
             self.iface.currentLayerChanged.disconnect(self._follow_active_layer)
-        except (TypeError, RuntimeError):
-            pass
+        except (TypeError, RuntimeError) as err:
+            QgsMessageLog.logMessage(
+                f"dock: currentLayerChanged was already disconnected: {err!r}",
+                TITLE, msg_level("Info"))
         try:
             # Archive layers first, then streets, so centerlines are added last and sit on top.
             order = [key for _role, key in archive_roles]

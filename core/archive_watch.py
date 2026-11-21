@@ -14,10 +14,10 @@ import contextlib
 import os
 from datetime import datetime
 
-from qgis.core import QgsFeature, QgsFeatureRequest, QgsGeometry, QgsProject
+from qgis.core import QgsFeature, QgsFeatureRequest, QgsGeometry, QgsMessageLog, QgsProject
 from qgis.PyQt.QtCore import QObject, QTimer
 
-from ..compat import make_field, py_value
+from ..compat import make_field, msg_level, py_value
 from . import archive_model as M
 from .config import load_from_layer
 from .importer import BATCH, _SKIP_FIELDS, _accepted, _add, _conform, _kind_of, _spatial
@@ -171,8 +171,10 @@ def capture_edits(layer) -> tuple:
         try:
             if int(fid) < 0:
                 continue
-        except (TypeError, ValueError):
-            pass
+        except (TypeError, ValueError) as err:
+            QgsMessageLog.logMessage(
+                f"archive_watch: fid {fid!r} is not an int, treating as a valid id: {err!r}",
+                "NENA Addressing and RCL Tools", msg_level("Info"))
         feat = _provider_feature(layer, fid)
         if feat is None or not feat.isValid():
             missed += 1

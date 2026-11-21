@@ -3,14 +3,14 @@
 
 import os
 
-from qgis.core import QgsProject
+from qgis.core import QgsMessageLog, QgsProject
 from qgis.gui import QgsMapLayerComboBox
 from qgis.PyQt.QtCore import pyqtSignal
 from qgis.PyQt.QtWidgets import (QCheckBox, QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox,
                                  QHBoxLayout, QHeaderView, QInputDialog, QLabel, QMenu, QMessageBox, QPushButton,
                                  QSpinBox, QTableWidgetItem, QVBoxLayout, QWidget)
 
-from ..compat import point_layer_filter
+from ..compat import msg_level, point_layer_filter
 from ..core import lookups as LK
 from ..core import tables
 from ..core.addressing import engine as E
@@ -358,8 +358,10 @@ class AddressesTab(QWidget):
                 if txt:
                     try:
                         o[key] = cast(txt)
-                    except ValueError:
-                        pass
+                    except ValueError as err:
+                        QgsMessageLog.logMessage(
+                            f"addresses_tab: ignoring invalid {key} override {txt!r}: {err!r}",
+                            "NENA Addressing and RCL Tools", msg_level("Info"))
             a.overrides[comm] = {k: v for k, v in o.items() if v not in ("", None)}
         if self.cb_place.isEnabled():
             a.placement = self.cb_place.currentData()

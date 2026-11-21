@@ -11,10 +11,11 @@ about=Day-to-day 911 addressing in QGIS, following the NENA NG9-1-1 layout for r
     - Drop-down lists for street types, communities, ZIP codes, ESNs, and other fields, so values are entered the same way every time.
     - Check for range gaps, overlaps, wrong odd/even sides, missing values, and MSAG mismatches before you submit.
     Works with GeoPackage, file geodatabase, shapefile, PostgreSQL/PostGIS, SQL Server, and other QGIS data sources. Every edit is undoable. Pure PyQGIS, no extra installs. Runs on QGIS 3.34 or newer, including QGIS 4.
-version=3.9.0
+version=3.9.1
 author=Charles
 email=pwizzle77@gmail.com
-changelog=3.9.0 - Open existing database recognizes compatible NENA tables in a GeoPackage, File Geodatabase, or saved database connection. Checks fields and geometry, reconnects available layers, and reuses loaded layers without creating tables, seeding lookups, or recalculating data. Project-only addressing settings still require the original QGIS project.
+changelog=3.9.1 - Code clean-up for the plugin repository's security scan: silently-ignored exceptions are now logged (same fallback behaviour); no change in how the plugin works.
+    3.9.0 - Open existing database recognizes compatible NENA tables in a GeoPackage, File Geodatabase, or saved database connection. Checks fields and geometry, reconnects available layers, and reuses loaded layers without creating tables, seeding lookups, or recalculating data. Project-only addressing settings still require the original QGIS project.
     3.8.2 - Addressing on OneWay TF roads measures from the line's end. The existing From-number base, numbering methods, parity, rounding, collision rules, physical sides, and access-point placement are retained. Neighbor ordering and address order checks use the same TF origin.
     3.8.1 - Deleting an address clears its temporary road-access circle, dashed line, and label from the map. Other selected addresses keep their overlays. Address calculations are unchanged.
     3.8.0 - New road centerline fields: PSAP_L/PSAP_R (filled like ZIP and ESN, from the PSAP zone layer when there is no PSAP rule), Hierarchy for routing (drop-down; empty takes it from RoadClass), NENA legacy street name parts (LSt_PreDir, LSt_Name, LSt_Typ, LSt_PosDir) with a calculated LSt_FullName, a calculated FullName, TravelTime in minutes from length and SpeedLimit, and Surface with a lookup list and default (Paved). Address points get a calculated FullAddr. FullName and FullAddr update on save and straight away when a master street name changes. Recalculate fields fills them on existing data; Update schema adds the columns.

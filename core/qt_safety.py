@@ -10,6 +10,8 @@ error. So every watcher remembers which object owns each connection and skips
 the ones whose owner has been deleted.
 """
 
+import warnings
+
 try:
     from qgis.PyQt import sip
 except ImportError:  # pragma: no cover - plain PyQt / tests
@@ -37,8 +39,8 @@ def safe_disconnect(owner, signal, slot) -> None:
         return
     try:
         signal.disconnect(slot)
-    except (TypeError, RuntimeError):
-        pass
+    except (TypeError, RuntimeError) as err:
+        warnings.warn(f"qt_safety.safe_disconnect: {slot!r} was already disconnected: {err!r}", stacklevel=2)
 
 
 def disconnect_all(conns) -> None:

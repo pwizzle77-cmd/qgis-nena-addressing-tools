@@ -12,12 +12,12 @@ point (inferred from the driveway, else the nearest point on the street).
 
 import contextlib
 
-from qgis.core import Qgis, QgsFeatureRequest, QgsGeometry, QgsPointXY
+from qgis.core import Qgis, QgsFeatureRequest, QgsGeometry, QgsMessageLog, QgsPointXY
 from qgis.gui import QgsMapCanvasItem, QgsRubberBand
 from qgis.PyQt.QtCore import QPointF, QRectF, Qt
 from qgis.PyQt.QtGui import QColor, QFont
 
-from ..compat import geometry_type_line
+from ..compat import geometry_type_line, msg_level
 from ..core.addressing import engine as E
 from ..core.config import load_from_layer
 from ..core.layer_access import ConfigError
@@ -95,8 +95,10 @@ class AddressOverlay:
         for it in items:
             try:
                 self.canvas.scene().removeItem(it)
-            except (RuntimeError, AttributeError):
-                pass
+            except (RuntimeError, AttributeError) as err:
+                QgsMessageLog.logMessage(
+                    f"address_overlay.clear: item was already removed: {err!r}",
+                    "NENA Addressing and RCL Tools", msg_level("Info"))
         self.items = [it for it in self.items if it not in items]
         if fid is None:
             self._items_by_fid.clear()
@@ -183,7 +185,9 @@ class AddressOverlay:
                 plan = E.plan_address(ctx, access, roof, exclude_address=f.id())
                 if plan.result.number is not None and plan.result.label != text:
                     text += f"  (range now: {plan.result.label})"
-            except ConfigError:
-                pass
+            except ConfigError as err:
+                QgsMessageLog.logMessage(
+                    f"address_overlay: could not preview a range for {f.id()}: {err!r}",
+                    "NENA Addressing and RCL Tools", msg_level("Info"))
         with contextlib.suppress(Exception):  # labels are a nicety
             self.items.append(_Label(self.canvas, mp_access, text, color))

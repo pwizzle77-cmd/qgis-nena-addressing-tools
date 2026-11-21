@@ -14,7 +14,7 @@ is another unit under that roof. The house number stays. The unit number
 changes. Right-click or Esc ends that roof.
 """
 
-from qgis.core import QgsGeometry, QgsPointLocator, QgsPointXY
+from qgis.core import QgsGeometry, QgsMessageLog, QgsPointLocator, QgsPointXY
 from qgis.gui import QgsMapTool, QgsRubberBand, QgsSnapIndicator, QgsVertexMarker
 from qgis.PyQt.QtCore import Qt, pyqtSignal
 from qgis.PyQt.QtGui import QColor
@@ -23,7 +23,7 @@ from qgis.PyQt.QtWidgets import (QCheckBox, QComboBox, QFormLayout, QLabel, QLin
 
 from .widgets import Surface, apply_panel_fill
 
-from ..compat import geometry_type_line
+from ..compat import geometry_type_line, msg_level
 from ..core.addressing import engine as E
 from ..core.addressing.units import next_unit
 from ..core.layer_access import ConfigError
@@ -175,8 +175,10 @@ class _AccessTool(QgsMapTool):
         for item in (self.marker, self.band):
             try:
                 self.canvas().scene().removeItem(item)
-            except (RuntimeError, AttributeError):
-                pass
+            except (RuntimeError, AttributeError) as err:
+                QgsMessageLog.logMessage(
+                    f"address_tool.cleanup: item was already removed: {err!r}",
+                    "NENA Addressing and RCL Tools", msg_level("Info"))
 
 
 class AddressTool(_AccessTool):

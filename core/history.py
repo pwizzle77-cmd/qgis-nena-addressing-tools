@@ -16,6 +16,7 @@ broken JSON. Then the change is worked out by comparing the saved versions.
 """
 
 import json
+import warnings
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 
@@ -233,8 +234,8 @@ def _when_key(value) -> str:
         if method is not None and not isinstance(value, str):
             try:
                 return str(method("yyyy-MM-dd HH:mm:ss"))
-            except TypeError:
-                pass
+            except TypeError as err:
+                warnings.warn(f"history._when_key: toString failed on {value!r}: {err!r}", stacklevel=2)
     if hasattr(value, "isoformat"):
         try:
             return value.isoformat(sep=" ")

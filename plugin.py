@@ -8,6 +8,7 @@ and the edit watchers that re-range centerlines after split / merge.
 
 import contextlib
 
+from qgis.core import QgsMessageLog
 from qgis.PyQt.QtCore import Qt, QTimer
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import QMenu, QToolButton
@@ -183,13 +184,17 @@ class NenaRclPlugin:
     def unload(self):
         try:
             self.iface.currentLayerChanged.disconnect(self._sync_auto_action)
-        except (TypeError, RuntimeError):
-            pass
+        except (TypeError, RuntimeError) as err:
+            QgsMessageLog.logMessage(
+                f"plugin.unload: currentLayerChanged was already disconnected: {err!r}",
+                "NENA Addressing and RCL Tools", msg_level("Info"))
         try:
             from qgis.core import QgsProject
             QgsProject.instance().readProject.disconnect(self._project_loaded)
-        except (TypeError, RuntimeError):
-            pass
+        except (TypeError, RuntimeError) as err:
+            QgsMessageLog.logMessage(
+                f"plugin.unload: readProject was already disconnected: {err!r}",
+                "NENA Addressing and RCL Tools", msg_level("Info"))
         for name in ("address_tool", "driveway_tool", "units_tool"):
             tool = getattr(self, name, None)
             if tool is None:
@@ -217,8 +222,10 @@ class NenaRclPlugin:
         if self.menu is not None:
             try:
                 self.iface.vectorMenu().removeAction(self.menu.menuAction())
-            except (TypeError, RuntimeError):
-                pass
+            except (TypeError, RuntimeError) as err:
+                QgsMessageLog.logMessage(
+                    f"plugin.unload: menu action was already removed: {err!r}",
+                    "NENA Addressing and RCL Tools", msg_level("Info"))
             self.menu.deleteLater()
             self.menu = None
         if self.toolbar is not None:

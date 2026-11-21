@@ -32,10 +32,10 @@ from collections import defaultdict
 from datetime import datetime
 from typing import Callable, Dict, Hashable, List, Optional
 
-from qgis.core import QgsFeatureRequest, QgsProject, QgsVectorLayer
+from qgis.core import QgsFeatureRequest, QgsMessageLog, QgsProject, QgsVectorLayer
 from qgis.PyQt.QtCore import QObject, QTimer
 
-from ..compat import set_split_policy
+from ..compat import msg_level, set_split_policy
 from . import geometry_utils as gu
 from . import ranging as R
 from .config import PluginConfig, M_POINTS, GEOM_INTERVAL, GEOM_POINTS, load_from_layer
@@ -85,8 +85,10 @@ class LayerWatcher(QObject):
                           (self.layer.selectionChanged, self._on_selection)):
             try:
                 sig.disconnect(slot)
-            except (TypeError, RuntimeError):
-                pass
+            except (TypeError, RuntimeError) as err:
+                QgsMessageLog.logMessage(
+                    f"split_handler.detach: {slot!r} was already disconnected: {err!r}",
+                    "NENA Addressing and RCL Tools", msg_level("Info"))
 
     # -- configuration ---------------------------------------------------
     def config(self) -> Optional[PluginConfig]:
@@ -543,8 +545,10 @@ class WatcherManager:
                           (prj.layerWillBeRemoved, self._on_layer_removed)):
             try:
                 sig.disconnect(slot)
-            except (TypeError, RuntimeError):
-                pass
+            except (TypeError, RuntimeError) as err:
+                QgsMessageLog.logMessage(
+                    f"split_handler.unload: {slot!r} was already disconnected: {err!r}",
+                    "NENA Addressing and RCL Tools", msg_level("Info"))
         for w in self.watchers.values():
             w.detach()
         self.watchers.clear()

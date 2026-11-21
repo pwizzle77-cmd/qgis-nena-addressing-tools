@@ -4,9 +4,9 @@
 import contextlib
 
 from qgis.core import (Qgis, QgsCoordinateTransform, QgsFeature, QgsFeatureRequest, QgsFeatureSink,
-                       QgsGeometry, QgsProject, QgsVectorDataProvider, QgsWkbTypes)
+                       QgsGeometry, QgsMessageLog, QgsProject, QgsVectorDataProvider, QgsWkbTypes)
 
-from ..compat import py_value
+from ..compat import msg_level, py_value
 from .layer_access import ConfigError
 from .schema_pack import convert_value
 
@@ -174,8 +174,10 @@ def _add(provider, batch):
     if flag:
         try:
             return provider.addFeatures(batch, flag)
-        except TypeError:
-            pass
+        except TypeError as err:
+            QgsMessageLog.logMessage(
+                f"importer._add: provider does not accept the fast-insert flag, retrying without it: {err!r}",
+                "NENA Addressing and RCL Tools", msg_level("Info"))
     return provider.addFeatures(batch)
 
 

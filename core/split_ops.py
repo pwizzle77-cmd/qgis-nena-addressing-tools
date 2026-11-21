@@ -12,9 +12,10 @@ Shared split / re-range operations.
 from datetime import datetime
 from typing import Dict, Hashable, List, Sequence, Tuple
 
-from qgis.core import QgsFeatureRequest, QgsGeometry, QgsVectorLayer, QgsVectorLayerUtils, QgsWkbTypes
+from qgis.core import (QgsFeatureRequest, QgsGeometry, QgsMessageLog, QgsVectorLayer,
+                       QgsVectorLayerUtils, QgsWkbTypes)
 
-from ..compat import py_value
+from ..compat import msg_level, py_value
 from . import geometry_utils as gu
 from . import ranging as R
 from .anchors import point_anchors, point_layer_ready
@@ -72,8 +73,10 @@ def split_metres_per_number(cfg: PluginConfig):
         a = load_project_config().addresses
         if a.method == "distance" and float(a.distance_per_number or 0) > 0:
             return R.to_meters(float(a.distance_per_number), a.distance_units)
-    except Exception:  # noqa: BLE001 - no project settings
-        pass
+    except Exception as err:  # noqa: BLE001 - no project settings
+        QgsMessageLog.logMessage(
+            f"split_ops: no project distance-ranging setting, falling back to cfg.ranging: {err!r}",
+            "NENA Addressing and RCL Tools", msg_level("Info"))
     rs = cfg.ranging
     if rs.method == M_INTERVAL and float(rs.interval_distance or 0) > 0:
         return R.to_meters(float(rs.interval_distance), rs.interval_units)

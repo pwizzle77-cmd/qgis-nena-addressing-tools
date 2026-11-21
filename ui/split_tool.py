@@ -9,12 +9,12 @@ address points when configured), the new piece gets a fresh NGUID and the
 whole operation is ONE undo step. Right-click or Esc leaves the tool.
 """
 
-from qgis.core import QgsFeatureRequest, QgsPointLocator, QgsRectangle
+from qgis.core import QgsFeatureRequest, QgsMessageLog, QgsPointLocator, QgsRectangle
 from qgis.gui import QgsMapTool, QgsRubberBand, QgsSnapIndicator, QgsVertexMarker
 from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtGui import QColor
 
-from ..compat import geometry_type_line
+from ..compat import geometry_type_line, msg_level
 from ..core.layer_access import ConfigError
 from ..core.split_ops import split_and_rerange
 
@@ -130,5 +130,7 @@ class SplitRerangeTool(QgsMapTool):
         for item in (self.marker, self.band):
             try:
                 self.canvas().scene().removeItem(item)
-            except (RuntimeError, AttributeError):
-                pass
+            except (RuntimeError, AttributeError) as err:
+                QgsMessageLog.logMessage(
+                    f"split_tool.cleanup: item was already removed: {err!r}",
+                    "NENA Addressing and RCL Tools", msg_level("Info"))

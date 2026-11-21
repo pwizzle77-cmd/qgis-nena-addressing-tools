@@ -14,6 +14,7 @@ lazily so the rest of this module is testable without QGIS.
 """
 
 import json
+import warnings
 from dataclasses import dataclass, field, asdict, fields as dc_fields
 from typing import Dict, List, Optional
 
@@ -239,8 +240,8 @@ def save_to_layer(layer, cfg: PluginConfig) -> None:
     try:
         from qgis.core import QgsProject
         QgsProject.instance().setDirty(True)
-    except ImportError:  # pragma: no cover - only outside QGIS
-        pass
+    except ImportError as err:  # pragma: no cover - only outside QGIS
+        warnings.warn(f"config.save_to_layer: no QGIS project to flag dirty: {err!r}", stacklevel=2)
 
 
 def has_config(layer) -> bool:

@@ -10,9 +10,11 @@ so neither turns black under a QGIS theme or ArcSkin.
 
 import contextlib
 
+from qgis.core import QgsMessageLog
 from qgis.PyQt.QtCore import QByteArray, QObject, QSize, Qt, pyqtSignal
 from qgis.PyQt.QtWidgets import QDockWidget, QVBoxLayout
 
+from ..compat import msg_level
 from .widgets import Surface, apply_normal_look
 
 SETTINGS_ROOT = "NENA_Addressing/windows"
@@ -259,8 +261,10 @@ class WindowHost(QObject):
         for window in list(self.windows.values()):
             try:
                 window.visibilityChanged.disconnect(self._visibility)
-            except (TypeError, RuntimeError):
-                pass
+            except (TypeError, RuntimeError) as err:
+                QgsMessageLog.logMessage(
+                    f"windows.unload: visibilityChanged was already disconnected: {err!r}",
+                    "NENA Addressing and RCL Tools", msg_level("Info"))
             if window.isVisible():
                 window.save_geometry()
             window.hide()
@@ -268,13 +272,17 @@ class WindowHost(QObject):
         for dock_widget in list(self.docks.values()):
             try:
                 dock_widget.visibilityChanged.disconnect(self._visibility)
-            except (TypeError, RuntimeError):
-                pass
+            except (TypeError, RuntimeError) as err:
+                QgsMessageLog.logMessage(
+                    f"windows.unload: visibilityChanged was already disconnected: {err!r}",
+                    "NENA Addressing and RCL Tools", msg_level("Info"))
             if dock_widget.added:
                 try:
                     self.iface.removeDockWidget(dock_widget)
-                except (TypeError, RuntimeError):
-                    pass
+                except (TypeError, RuntimeError) as err:
+                    QgsMessageLog.logMessage(
+                        f"windows.unload: dock widget was already removed: {err!r}",
+                        "NENA Addressing and RCL Tools", msg_level("Info"))
             dock_widget.deleteLater()
         self.windows.clear()
         self.docks.clear()
