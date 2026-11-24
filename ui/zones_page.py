@@ -420,6 +420,9 @@ class ZoneResultsPage(QWidget):
         from ..core.zone_checks import run_zone_checks
 
         def do():
+            self.dock.open_page(self.dock.validation)
+            self.dock.validation.pages.setCurrentWidget(self)
+            self.lbl.setText("Checking zones…")
             pcfg = load_project_config()
             if not Z.load_zones(pcfg.zones.layers):
                 raise ConfigError("No zone layers yet. Add them under Settings, Zones.")
@@ -430,9 +433,18 @@ class ZoneResultsPage(QWidget):
             except ConfigError:
                 ctx = None
             exc = X.ExceptionSet.from_layer(layer_for(pcfg.zones, "exceptions"))
-            issues = self.dock._with_progress(
-                lambda cb: run_zone_checks(pcfg, rcl, key_field, ctx, exc, cb))
-            self.issues = list(issues or [])
+
+            def work(cb):
+                def note(pct, text=None):
+                    if text:
+                        self.lbl.setText(text)
+                    cb(pct, text)
+                return run_zone_checks(pcfg, rcl, key_field, ctx, exc, note)
+
+            issues = self.dock._with_progress(work)
+            if issues is None:
+                return
+            self.issues = list(issues)
             self._fill()
             if ctx is None:
                 self.dock._msg("Address checks were skipped: choose the address layer in the Addresses window.",

@@ -37,7 +37,7 @@ from typing import Callable, Dict, Hashable, List, Optional, Sequence
 from qgis.core import (Qgis, QgsCoordinateTransform, QgsGeometry, QgsPoint, QgsPointXY,
                        QgsProject, QgsRectangle, QgsSpatialIndex)
 
-from ..compat import py_value
+from ..compat import py_value, tell
 from . import geometry_utils as gu
 from . import zones as Z
 from .check_exceptions import EXCUSED, STALE, ExceptionSet
@@ -541,21 +541,22 @@ def run_zone_checks(pcfg, rcl=None, rcl_key_field: str = "RCL_NGUID", address_ct
     issues: List[ZoneIssue] = []
     steps = len(zones) + 3
 
-    def tick(step, frac=0.0):
-        if progress is not None:
-            progress(min(100.0, 100.0 * (step + frac) / steps))
+    def tick(step, frac=0.0, text=None):
+        tell(progress, min(100.0, 100.0 * (step + frac) / steps), text)
 
     for i, zone in enumerate(zones):
-        tick(i)
+        title = zone.cfg.title or "zone"
+        tick(i, 0, "Checking %s" % title)
         issues.extend(_layer_issues(zone, prov, prov_union))
-    tick(len(zones))
+    tick(len(zones), 0, "Checking emergency service zones")
     issues.extend(_esz_issues(zones))
-    tick(len(zones) + 1)
+    tick(len(zones) + 1, 0, "Checking roads against zones")
     issues.extend(_road_issues(zones, rcl, rcl_key_field, prov, prov_union,
-                               lambda f: tick(len(zones) + 1, f)))
-    tick(len(zones) + 2)
-    issues.extend(_address_issues(zones, address_ctx, lambda f: tick(len(zones) + 2, f)))
-    tick(steps)
+                               lambda f: tick(len(zones) + 1, f, "Checking roads against zones")))
+    tick(len(zones) + 2, 0, "Checking addresses against zones")
+    issues.extend(_address_issues(zones, address_ctx, lambda f: tick(len(zones) + 2, f,
+                                                                     "Checking addresses against zones")))
+    tick(steps, 0, "Finished")
     if exceptions is not None:
         apply_exceptions(issues, exceptions)
     return issues

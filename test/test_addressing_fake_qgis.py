@@ -406,6 +406,10 @@ def test_address_issues_reports_progress(world):
     seen = []
     address_issues(ctx, progress=seen.append)
     assert seen and seen[-1] == 100.0
+    named = []
+    address_issues(ctx, progress=lambda pct, text=None: named.append(text))
+    assert "Checking numbers, sides, ranges, and coordinates" in named
+    assert named[-1] == "Finished"
 
 
 def _box(lyr, attrs, ring):

@@ -11,8 +11,8 @@ from qgis.core import QgsCoordinateReferenceSystem, QgsMessageLog, QgsProject, Q
 from qgis.gui import QgsMapLayerComboBox
 from qgis.PyQt.QtCore import QCoreApplication, QSettings, QSize, Qt, QTimer, pyqtSignal
 from qgis.PyQt.QtWidgets import (QCheckBox, QDockWidget, QFileDialog, QGroupBox, QHBoxLayout, QInputDialog,
-                                 QLabel, QMessageBox, QProgressBar, QPushButton, QVBoxLayout,
-                                 QWidget)
+                                 QLabel, QMessageBox, QProgressBar, QProgressDialog, QPushButton,
+                                 QVBoxLayout, QWidget)
 
 from ..compat import line_layer_filter, msg_level
 from ..core import config as C
@@ -138,6 +138,8 @@ class NenaDock(QDockWidget):
         self.addresses.unitsToolRequested.connect(lambda *_: self.unitsToolRequested.emit())
         self.addresses.configSaved.connect(lambda *_: self.projectConfigSaved.emit())
         self._progress_bars = []
+        self._progress_labels = []
+        self._progress_rows = []
         self._layer_mirrors = []
         self._layer_sync = False
         self.progress = self.make_progress()
@@ -667,11 +669,28 @@ class NenaDock(QDockWidget):
         def do():
             entries = []
 
+            box = QProgressDialog("Starting import…", None, 0, 100, self.iface.mainWindow())
+            box.setWindowTitle("Import")
+            box.setWindowModality(Qt.WindowModality.ApplicationModal)
+            box.setMinimumDuration(0)
+            box.setMinimumWidth(460)
+            box.setValue(0)
+            box.setCancelButton(None)
+            box.setAutoClose(False)
+            box.show()
+
             def run(progress):
                 count = len(jobs)
+
+                def show(pct, text=None):
+                    if text:
+                        box.setLabelText(text)
+                    box.setValue(max(0, min(100, int(pct))))
+                    progress(pct, text)
+
                 for i, job in enumerate(jobs):
-                    def tick(pct, index=i):
-                        progress((index + pct / 100.0) * 100.0 / max(count, 1))
+                    def tick(pct, text=None, index=i, title=job["title"]):
+                        show((index + pct / 100.0) * 100.0 / max(count, 1), text or ("Importing %s" % title))
                     try:
                         result = import_layer(job["source"], job["dest"], job["field_map"],
                                               job["selected_only"], tick)
@@ -692,11 +711,21 @@ class NenaDock(QDockWidget):
                         "missing": unmapped_required(destination_fields(job["dest"]), job["field_map"], job["defs"]),
                     })
 
-            self._with_progress(run)
+            access_note = ""
+            self._import_status = box
+            try:
+                self._with_progress(run)
+                if make_access:
+                    box.setLabelText("Building access points")
+                    box.setValue(0)
+                    access_note = self._import_access_points()
+            finally:
+                self._import_status = None
+                box.close()
             self._register_imported_zones(jobs)
             text = format_import_report(entries) or "Nothing was imported."
-            if make_access:
-                text += "\n\n" + self._import_access_points()
+            if access_note:
+                text += "\n\n" + access_note
             QMessageBox.information(self, TITLE, text)
             written = sum(int(entry.get("written") or 0) for entry in entries)
             self._msg(f"Import finished. {written} feature(s) saved.", "Success")
@@ -1238,20 +1267,34 @@ class NenaDock(QDockWidget):
         def do():
             layer = self._require_layer()
             self._persist()
+            self.open_page(self.validation)
+            self.validation.pages.setCurrentIndex(0)
+            self.validation.lbl_summary.setText("Checking centerlines…")
             v = Validator(layer, self.cfg)
-            issues = self._with_progress(lambda cb: v.run(selected_only, cb))
+
+            def work(cb):
+                def note(pct, text=None):
+                    if text:
+                        self.validation.lbl_summary.setText(text)
+                    cb(pct, text)
+
+                issues = v.run(selected_only, note)
+                try:
+                    ctx = self.addresses.context()
+                except ConfigError:
+                    ctx = None
+                if ctx is not None:
+                    note(98, "Checking centerline boundaries")
+                    boundary = centerline_boundary_issues(ctx)
+                    if selected_only:
+                        scope = set(layer.selectedFeatureIds())
+                        boundary = [i for i in boundary if i.fid in scope]
+                    issues = V.sort_issues(issues + boundary)
+                return issues
+
+            issues = self._with_progress(work)
             if issues is None:
                 return
-            try:
-                ctx = self.addresses.context()
-            except ConfigError:
-                ctx = None
-            if ctx is not None:
-                boundary = centerline_boundary_issues(ctx)
-                if selected_only:
-                    scope = set(layer.selectedFeatureIds())
-                    boundary = [i for i in boundary if i.fid in scope]
-                issues = V.sort_issues(issues + boundary)
             self.validation.set_issues(issues)
             self.open_page(self.validation)
             if self.cfg.validation.select_overlaps and self.cfg.validation.check_overlaps:
@@ -1266,8 +1309,19 @@ class NenaDock(QDockWidget):
         def do():
             layer = self._require_layer()
             self._persist()
+            self.open_page(self.validation)
+            self.validation.pages.setCurrentIndex(0)
+            self.validation.lbl_summary.setText("Checking overlaps…")
             v = Validator(layer, self.cfg)
-            issues = self._with_progress(lambda cb: v.run(selected_only, cb, only={"check_overlaps"}))
+
+            def work(cb):
+                def note(pct, text=None):
+                    if text:
+                        self.validation.lbl_summary.setText(text)
+                    cb(pct, text)
+                return v.run(selected_only, note, only={"check_overlaps"})
+
+            issues = self._with_progress(work)
             if issues is None:
                 return
             self.validation.set_issues(issues)
@@ -1391,11 +1445,22 @@ class NenaDock(QDockWidget):
 
     # ------------------------------------------------------------------ helpers
     def make_progress(self):
+        row = QWidget()
+        lay = QVBoxLayout(row)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(2)
+        lab = QLabel("")
+        lab.setWordWrap(True)
         bar = QProgressBar()
         bar.setRange(0, 100)
-        bar.setVisible(False)
+        bar.setFormat("%p%")
+        lay.addWidget(lab)
+        lay.addWidget(bar)
+        row.setVisible(False)
         self._progress_bars.append(bar)
-        return bar
+        self._progress_labels.append(lab)
+        self._progress_rows.append(row)
+        return row
 
     def make_layer_row(self):
         """A centerline picker synced with the one on Settings, plus Save."""
@@ -1450,21 +1515,36 @@ class NenaDock(QDockWidget):
         return wrap
 
     def _with_progress(self, func):
-        bars = list(self._progress_bars) or [self.progress]
+        if getattr(self, "_progress_busy", False):
+            return None
+        self._progress_busy = True
+        bars = list(self._progress_bars)
+        for row in self._progress_rows:
+            row.setVisible(True)
         for bar in bars:
             bar.setValue(0)
-            bar.setVisible(True)
+        for lab in self._progress_labels:
+            lab.setText("Working…")
 
-        def cb(pct):
+        def cb(pct, text=None):
             value = max(0, min(100, int(pct)))
             for bar in bars:
                 bar.setValue(value)
+            if text:
+                for lab in self._progress_labels:
+                    lab.setText(text)
+            box = getattr(self, "_import_status", None)
+            if box is not None:
+                if text:
+                    box.setLabelText(text)
+                box.setValue(value)
             QCoreApplication.processEvents()
         try:
             return func(cb)
         finally:
-            for bar in bars:
-                bar.setVisible(False)
+            for row in self._progress_rows:
+                row.setVisible(False)
+            self._progress_busy = False
 
     def _guard(self, func):
         try:

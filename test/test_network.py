@@ -69,6 +69,16 @@ def test_meeting_at_an_end_is_not_a_crossing():
     assert "UNSPLIT_CROSSING" not in {code for code, _fid in _codes(lyr, cfg)}
 
 
+def test_validation_names_the_check_it_is_running():
+    lyr, cfg = _layer()
+    _road(lyr, [(0, 0), (100, 0)])
+    named = []
+    Validator(lyr, cfg).run(False, lambda pct, text=None: named.append(text))
+    assert "Reading centerlines" in named
+    assert "Checking near ends, crossings, and joined roads" in named
+    assert named[-1] == "Finished"
+
+
 def test_overpass_is_not_an_unsplit_crossing():
     lyr, cfg = _layer(("Overpass",))
     _road(lyr, [(0, 0), (100, 0)])

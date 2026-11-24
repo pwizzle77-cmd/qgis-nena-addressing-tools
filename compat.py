@@ -37,6 +37,19 @@ def py_value(value):
     return value
 
 
+def tell(progress, pct, text=None):
+    """Report a percent and, when the callback accepts it, what is happening now.
+
+    A callback that only takes the percent still works.
+    """
+    if progress is None:
+        return
+    try:
+        progress(pct, text)
+    except TypeError:
+        progress(pct)
+
+
 def line_layer_filter():
     """Filter flag for QgsMapLayerComboBox limited to line layers."""
     lf = getattr(Qgis, "LayerFilter", None)          # QGIS >= 3.34

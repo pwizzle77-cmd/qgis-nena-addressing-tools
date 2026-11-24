@@ -810,9 +810,9 @@ Turn these on or off under **Settings → Editing**.
 
 ## Checking your data
 
-Click **Validate** on the toolbar, or open **NENA ▾ → Check**.
+Click **Validate** on the toolbar, or open **NENA ▾ → Check**. Nothing runs until you click **Validate selected**, **Validate layer**, **Check zones**, or the address check.
 
-The **Results** page lists every problem. Double-click a row to zoom to it. You can select the features, export a CSV, or load the problems as a temporary layer. Overlapping ranges are selected automatically.
+The window stays open while the check runs. The progress bar names the check that is running, such as overlaps, gaps, or addresses against zones. The **Results** page lists every problem. Double-click a row to zoom to it. You can select the features, export a CSV, or load the problems as a temporary layer. Overlapping ranges are selected automatically.
 
 **What it looks for:**
 
@@ -1051,6 +1051,7 @@ To undo a change, pick the version you want to go back to and click **Roll back 
 
 ## What's new
 
+- **3.9.7** — Check and import leave the window open and name the step that is running. On Check, that starts when you click Validate, not when the window opens.
 - **3.9.6** — Check lists a near-miss road end, an unsplit crossing, and a pseudo-node. Overpass Y skips a grade-separated crossing. Retire keeps a road or address with status RET and an Expire date, and Show only current features hides those rows. Export NG9-1-1 submission writes current centerlines, addresses, and zones without the plugin's link fields. Address Check uses the side the building sits on, compares stored longitude/latitude with the point, and accepts a landmark or milepost with no house number. Address import fills longitude and latitude from the point when they are empty. Alias street names follow the live street.
 - **3.8.2** — TF addressing measures from the line's last vertex. Numbering formulas, the From-number base, parity, rounding, collision rules and physical sides stay the same. Neighbor and validation order use the same TF origin.
 - **3.8.1** — Deleting an address removes its temporary road-access circle, dashed line and label while keeping other selected addresses' drawings.

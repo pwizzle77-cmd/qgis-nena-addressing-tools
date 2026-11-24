@@ -19,6 +19,7 @@ from .config import PluginConfig
 from .layer_access import FieldAccessor, read_segments
 from .schema import MANDATORY, RANGE_FIELDS
 from .template import effective_fields
+from ..compat import tell
 from .network import network_issues
 from .topology import assign_nodes, build_chains, direction_conflicts
 
@@ -51,9 +52,11 @@ class Validator:
                                           f"Mandatory field {fd.name} is not mapped / missing"))
         if acc.missing(RANGE_FIELDS):
             # nothing range-related can be checked
+            tell(progress, 100, "Range fields are not mapped")
             return V.sort_issues(issues)
 
-        segs = read_segments(self.layer, acc, None, progress=_scaled(progress, 0, 50))
+        tell(progress, 0, "Reading centerlines")
+        segs = read_segments(self.layer, acc, None, progress=_scaled(progress, 0, 35))
         scope = set(self.layer.selectedFeatureIds()) if selected_only else None
 
         # -- per feature attribute checks ---------------------------------
@@ -63,10 +66,25 @@ class Validator:
         if scope is not None:
             req.setFilterFids(list(scope))
         total = len(scope) if scope is not None else (self.layer.featureCount() or 1)
+        bits = []
+        if vs.check_mandatory:
+            bits.append("mandatory fields")
+        if vs.check_ranges:
+            bits.append("ranges")
+        if vs.check_parity:
+            bits.append("parity")
+        if vs.check_domains:
+            bits.append("domains")
+        if vs.check_nguid:
+            bits.append("NGUID format")
+        if vs.check_geometry:
+            bits.append("geometry")
+        if bits:
+            tell(progress, 35, "Checking " + ", ".join(bits))
         for n, f in enumerate(self.layer.getFeatures(req)):
             fid = f.id()
-            if progress and n % 200 == 0:
-                progress(50 + int(30 * n / max(total, 1)))
+            if n % 200 == 0:
+                tell(progress, 35 + int(35 * n / max(total, 1)))
             if vs.check_mandatory:
                 for name in mand_mapped:
                     if name in RANGE_FIELDS or name in ("Parity_L", "Parity_R", "RCL_NGUID"):
@@ -110,11 +128,13 @@ class Validator:
                         issues.append(V.Issue(fid, V.INFO, "GEOMETRY_INVALID", "Geometry is not GEOS-valid"))
 
         if vs.check_geometry:
+            tell(progress, 72, "Checking near ends, crossings, and joined roads")
             snap = gu.metres_to_layer_units(self.cfg.ranging.snap_tolerance_m, self.layer.crs())
             near = gu.metres_to_layer_units(max(self.cfg.ranging.snap_tolerance_m * 10.0, 5.0), self.layer.crs())
             issues.extend(_in_scope(network_issues(self.layer, acc, segs, snap, near), scope))
 
         if vs.check_nguid and acc.has("RCL_NGUID"):
+            tell(progress, 78, "Checking duplicate NGUIDs")
             nguid_idx = acc.index["RCL_NGUID"]
             for f in self.layer.getFeatures(QgsFeatureRequest().setSubsetOfAttributes([nguid_idx])):
                 nguids[f.id()] = acc.get(f, "RCL_NGUID")
@@ -125,9 +145,8 @@ class Validator:
             tol = gu.metres_to_layer_units(self.cfg.ranging.snap_tolerance_m, self.layer.crs())
             seglist = [s for s in segs.values() if not s.extra.get("empty")]
             assign_nodes(seglist, tol)
-            if progress:
-                progress(85)
             if vs.check_overlaps:
+                tell(progress, 84, "Checking overlaps")
                 recs = []
                 comm = vs.overlap_community_field.strip()
                 feats_comm = self._community_values(comm) if comm else {}
@@ -140,6 +159,7 @@ class Validator:
                         recs.append(V.RangeRecord(s.fid, side, fr, to, par, group))
                 issues.extend(_in_scope(V.find_overlaps(recs), scope))
             if vs.check_gaps:
+                tell(progress, 90, "Checking gaps")
                 for chain in build_chains(seglist):
                     if len(chain) < 2:
                         continue
@@ -147,6 +167,7 @@ class Validator:
                              for s in chain]
                     issues.extend(_in_scope(V.check_chain_gaps(items, vs.gap_tolerance), scope))
             if vs.check_direction:
+                tell(progress, 94, "Checking digitizing direction")
                 for a, b, kind in direction_conflicts(seglist):
                     text = ("meet end-to-end" if kind == "head_to_head" else "start at the same point")
                     for fid, other in ((a, b), (b, a)):
@@ -155,9 +176,9 @@ class Validator:
                                                   f"Same-named segments {a} and {b} {text}; one is probably "
                                                   "digitized against the address direction", "", other))
         if vs.check_names:
+            tell(progress, 97, "Checking names against the street list")
             issues.extend(_in_scope(self._name_issues(), scope))
-        if progress:
-            progress(100)
+        tell(progress, 100, "Finished")
         return V.sort_issues(issues)
 
     def _name_issues(self) -> List[V.Issue]:
@@ -195,7 +216,11 @@ def _in_scope(issues, scope):
 def _scaled(progress, lo, hi):
     if progress is None:
         return None
-    return lambda pct: progress(lo + int((hi - lo) * pct / 100))
+
+    def inner(pct, text=None):
+        tell(progress, lo + int((hi - lo) * pct / 100), text)
+
+    return inner
 
 
 # ---------------------------------------------------------------------------

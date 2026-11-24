@@ -7,7 +7,7 @@ from qgis.core import (Qgis, QgsCoordinateReferenceSystem, QgsCoordinateTransfor
                        QgsFeatureSink, QgsGeometry, QgsMessageLog, QgsPointXY, QgsProject, QgsVectorDataProvider,
                        QgsWkbTypes)
 
-from ..compat import msg_level, py_value
+from ..compat import msg_level, py_value, tell
 from .layer_access import ConfigError
 from .schema_pack import convert_value
 
@@ -297,8 +297,9 @@ def import_layer(source, dest, field_map, selected_only: bool = False, progress=
     name_idx = dest_fields.lookupField("St_Name") if not spatial else -1
 
     def tick():
-        if progress and total and total > 0 and (seen % 200 == 0 or seen == total):
-            progress(100.0 * seen / max(total, 1))
+        if total and total > 0 and (seen % 200 == 0 or seen == total):
+            tell(progress, 100.0 * seen / max(total, 1),
+                 "Importing %s: %s of %s" % (dest.name(), f"{seen:,}", f"{total:,}"))
 
     def flush():
         nonlocal written, batch
@@ -364,8 +365,7 @@ def import_layer(source, dest, field_map, selected_only: bool = False, progress=
     with contextlib.suppress(Exception):  # the features are already stored
         dest.reload()
     dest.triggerRepaint()
-    if progress:
-        progress(100)
+    tell(progress, 100, "Imported %s" % dest.name())
     return {
         "written": written,
         "skipped": skipped,

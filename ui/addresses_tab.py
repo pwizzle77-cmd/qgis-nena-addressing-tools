@@ -620,9 +620,23 @@ class AddressResultsPage(QWidget):
     # ------------------------------------------------------------------
     def run(self):
         def do():
+            self.dock.open_page(self.dock.validation)
+            self.dock.validation.pages.setCurrentWidget(self)
+            self.lbl.setText("Checking addresses…")
             ctx = self.dock.addresses.context()
             self._addr_layer = ctx.addr
-            self.issues = self.dock._with_progress(lambda cb: address_issues(ctx, progress=cb))
+
+            def work(cb):
+                def note(pct, text=None):
+                    if text:
+                        self.lbl.setText(text)
+                    cb(pct, text)
+                return address_issues(ctx, progress=note)
+
+            issues = self.dock._with_progress(work)
+            if issues is None:
+                return
+            self.issues = issues
             self._fill()
         self.dock._guard(do)
 

@@ -8,6 +8,7 @@ from typing import Dict, List
 
 from qgis.core import QgsCoordinateReferenceSystem, QgsFeatureRequest, QgsPointXY
 
+from ...compat import tell
 from ..ranging import matches_parity, normalize_parity
 from ..rules import ERROR, WARNING, Issue, check_directional
 from ..schema import SIDE_FIELDS
@@ -132,13 +133,15 @@ def address_issues(ctx: AddressContext, check_attribution: bool = True, progress
         fillable = {k for k, v in field_defaults(ctx.pcfg, "address").items() if v}
     except Exception:  # noqa: BLE001 - the hint is a convenience
         fillable = set()
+    tell(progress, 0, "Reading addresses")
     feats = list(ctx.addr.getFeatures())
     total = max(len(feats), 1)
     by_id = ctx.repo.by_id() if ctx.repo is not None else {}
     wgs = _xf(ctx.addr.crs(), QgsCoordinateReferenceSystem("EPSG:4326"))
+    tell(progress, 5, "Checking numbers, sides, ranges, and coordinates")
     for pos, f in enumerate(feats):
-        if progress is not None and pos % 200 == 0:
-            progress(100.0 * pos / total)
+        if pos % 200 == 0:
+            tell(progress, 5 + 80.0 * pos / total, "Checking numbers, sides, ranges, and coordinates")
         if not f.hasGeometry():
             out.append(Issue(f.id(), ERROR, "ADDR_NO_GEOMETRY", "Address point has no geometry"))
             continue
@@ -235,12 +238,14 @@ def address_issues(ctx: AddressContext, check_attribution: bool = True, progress
                 if acc.has(fld) and N.clean(acc.get(f, fld)).upper() != N.clean(v).upper():
                     out.append(Issue(f.id(), WARNING, "ATTRIB_MISMATCH",
                                      f"{fld} is '{acc.get(f, fld) or ''}' but the {side} side of the road says '{v}'"))
+    tell(progress, 88, "Checking duplicate addresses")
     for (street, num, suf, unit), fids in seen.items():
         if len(fids) > 1:
             for fid in fids:
                 out.append(Issue(fid, ERROR, "ADDR_DUPLICATE",
                                  f"{num}{suf}{' unit ' + unit if unit else ''} appears {len(fids)} times on this street",
                                  related_fid=[x for x in fids if x != fid][0]))
+    tell(progress, 92, "Checking stacked address points")
     for entries in by_point.values():
         if len(entries) < 2:
             continue
@@ -252,6 +257,7 @@ def address_issues(ctx: AddressContext, check_attribution: bool = True, progress
             out.append(Issue(fid, WARNING, "ADDR_DUPLICATE_LOCATION",
                              f"{len(fids)} address points sit at the same location",
                              related_fid=[x for x in fids if x != fid][0]))
+    tell(progress, 96, "Checking address order")
     for (street, side), rows in per_side.items():
         rows.sort()
         top, top_fid = None, None
@@ -261,8 +267,7 @@ def address_issues(ctx: AddressContext, check_attribution: bool = True, progress
                                  f"{num} comes after {top} along the street (side {side})", side, top_fid))
             if top is None or num > top:
                 top, top_fid = num, fid
-    if progress is not None:
-        progress(100.0)
+    tell(progress, 100.0, "Finished")
     return out
 
 
