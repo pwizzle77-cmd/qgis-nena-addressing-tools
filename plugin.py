@@ -159,6 +159,17 @@ class NenaRclPlugin:
                                                 lambda *_: self._dock().import_schema(), "setup")
         self.act_archive = self._add_menu_action("", "Create version tables…",
                                                  lambda *_: self._dock().create_archive_schema(), "setup")
+        self.act_submit = self._add_menu_action("", "Export NG9-1-1 submission…",
+                                                self._export_submission, "setup")
+        self.act_retire = self._add_menu_action(
+            "", "Retire selected roads and addresses", self._retire_selected, "centerline")
+        self._menu_groups["addressing"].append(self.act_retire)
+        self.act_current = self._add_action(
+            "", "Show only current features", self._toggle_current, "centerline",
+            checkable=True, toolbar=False)
+        self.act_current.setToolTip("Hide roads, addresses, and zones whose Expire date has passed "
+                                    "or whose status is RET. Click again to show them.")
+        self._menu_groups["addressing"].append(self.act_current)
         self._add_windows_button(before=self._windows_button_slot)
         self._add_master_streets_button(before=self._windows_button_slot)
         self._build_menu()
@@ -648,6 +659,53 @@ class NenaRclPlugin:
         self.act_auto.blockSignals(True)
         self.act_auto.setChecked(self.dock.layer is not None and self.dock.current_cfg_auto_split())
         self.act_auto.blockSignals(False)
+
+    def _retire_selected(self, *_args):
+        from .core.project_config import load_project_config
+        from .core.retire import retire_selected
+        dock = self._dock()
+        try:
+            _count, text = retire_selected(dock.layer, dock.cfg, load_project_config())
+        except ConfigError as exc:
+            self._notify("Warning", str(exc))
+            return
+        self._notify("Success" if _count else "Info", text)
+        if dock.layer is not None:
+            dock.layer.triggerRepaint()
+
+    def _toggle_current(self, checked):
+        from .core.project_config import load_project_config
+        from .core.retire import current_layers, set_current_view
+        dock = self._dock()
+        try:
+            set_current_view(current_layers(dock.layer, load_project_config()), bool(checked))
+        except ConfigError as exc:
+            self.act_current.blockSignals(True)
+            self.act_current.setChecked(False)
+            self.act_current.blockSignals(False)
+            self._notify("Warning", str(exc))
+            return
+        self._notify("Info", "Showing current features." if checked else
+                     "Showing every feature, including retired ones.")
+
+    def _export_submission(self, *_args):
+        from qgis.PyQt.QtWidgets import QFileDialog
+        from .core.project_config import load_project_config
+        from .core.submit import export_submission, submission_sources
+        path, _chosen = QFileDialog.getSaveFileName(
+            self.iface.mainWindow(), "NG9-1-1 submission", "",
+            "File Geodatabase (*.gdb);;GeoPackage (*.gpkg)")
+        if not path:
+            return
+        dock = self._dock()
+        sources = submission_sources(load_project_config(), dock.layer)
+        try:
+            result = export_submission(path, sources)
+        except ConfigError as exc:
+            self._notify("Warning", str(exc))
+            return
+        note = f" {result['note']}" if result.get("note") else ""
+        self._notify("Success", f"Wrote {result['features']} current feature(s) to {result['path']}.{note}")
 
     def _notify(self, level, text):
         self.iface.messageBar().pushMessage(TITLE, text, level=msg_level(level), duration=5)

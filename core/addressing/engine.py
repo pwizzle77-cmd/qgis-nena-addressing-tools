@@ -81,6 +81,43 @@ def parse_number(value, suffix_value=None) -> Tuple[Optional[int], str]:
     return n, suf
 
 
+def resolve_street(by_id: dict, sid: str, parts: dict) -> Tuple[str, dict]:
+    """Follow one AliasOf hop to the live street. A loop is not followed."""
+    sid = N.clean(sid)
+    if not by_id:
+        return sid, parts
+    if sid:
+        rec = by_id.get(sid)
+        if rec is not None and rec.alias_of and rec.alias_of != sid and rec.alias_of in by_id:
+            primary = by_id[rec.alias_of]
+            return primary.street_id, dict(primary.parts)
+        return sid, parts
+    key = N.name_key(parts)
+    if not key:
+        return sid, parts
+    for rec in by_id.values():
+        if rec.alias_of and rec.alias_of != rec.street_id and rec.alias_of in by_id \
+                and N.name_key(rec.parts) == key:
+            primary = by_id[rec.alias_of]
+            return primary.street_id, dict(primary.parts)
+    return sid, parts
+
+
+def related_street_ids(by_id: dict, sid: str) -> set:
+    """This StreetID plus the primary and the aliases one hop away."""
+    sid = N.clean(sid)
+    ids = {sid} if sid else set()
+    if not by_id or not sid:
+        return ids
+    rec = by_id.get(sid)
+    target = rec.alias_of if rec is not None and rec.alias_of and rec.alias_of != sid else sid
+    ids.add(target)
+    for other in by_id.values():
+        if other.alias_of == target and other.street_id:
+            ids.add(other.street_id)
+    return ids
+
+
 def address_mapping(layer: QgsVectorLayer, pcfg: ProjectConfig) -> Dict[str, str]:
     """NENA SSAP name -> field on the address layer (template-aware), plus manual overrides."""
     defs = effective_fields(pcfg.addresses.address_template or None, SSAP_FIELDS)
@@ -154,13 +191,15 @@ class AddressContext:
 
     # -- streets -----------------------------------------------------------
     def street_of(self, feat) -> Tuple[str, Dict[str, str]]:
-        """(StreetID or '', name parts) of a centerline feature; parts from the master when linked."""
+        """(StreetID or '', name parts) of a centerline feature. An alias resolves to the live street."""
         sid = N.clean(self.rcl_acc.get(feat, "StreetID")) if self.rcl_acc.has("StreetID") else ""
-        if sid and self.repo is not None:
-            rec = self.repo.by_id().get(sid)
+        by_id = self.repo.by_id() if self.repo is not None else {}
+        if sid and by_id:
+            rec = by_id.get(sid)
             if rec is not None:
-                return sid, dict(rec.parts)
-        return sid, {p: N.clean(self.rcl_acc.get(feat, p)) for p in N.NAME_PARTS}
+                return resolve_street(by_id, sid, dict(rec.parts))
+        parts = {p: N.clean(self.rcl_acc.get(feat, p)) for p in N.NAME_PARTS}
+        return resolve_street(by_id, sid, parts) if by_id else (sid, parts)
 
     def measure_for(self, feat) -> "StreetMeasure":
         sid, parts = self.street_of(feat)
@@ -235,11 +274,28 @@ def _ordered_features(layer, ids: List[Hashable]) -> list:
     return feats
 
 
+def _ids_for_street(by_sid, by_id, sid: str) -> List[Hashable]:
+    """Feature ids stored under this street or one alias hop from it."""
+    wanted = related_street_ids(by_id, sid)
+    if len(wanted) <= 1:
+        return list(by_sid.get(sid, ()))
+    ids = []
+    seen = set()
+    for other in wanted:
+        for fid in by_sid.get(other, ()):
+            if fid not in seen:
+                seen.add(fid)
+                ids.append(fid)
+    ids.sort(key=lambda fid: (0, fid) if isinstance(fid, int) else (1, str(fid)))
+    return ids
+
+
 def street_segment_ids(ctx: "AddressContext", sid: str, key: str) -> List[Hashable]:
     """Ids of the centerlines of one street (by StreetID, else by name), in layer order."""
     by_sid, by_key = _name_index(ctx.rcl, ctx.rcl_acc, "rcl")
     if sid:
-        return list(by_sid.get(sid, ()))
+        by_id = ctx.repo.by_id() if ctx.repo is not None else {}
+        return _ids_for_street(by_sid, by_id, sid)
     if not key:
         return []
     return list(by_key.get(key, ()))
@@ -249,7 +305,8 @@ def street_address_ids(ctx: "AddressContext", sid: str, key: str) -> List[Hashab
     """Ids of the address points on one street (by StreetID when mapped, else by name), in layer order."""
     by_sid, by_key = _name_index(ctx.addr, ctx.addr_acc, "addr")
     if sid and ctx.addr_acc.has("StreetID"):
-        return list(by_sid.get(sid, ()))
+        by_id = ctx.repo.by_id() if ctx.repo is not None else {}
+        return _ids_for_street(by_sid, by_id, sid)
     return list(by_key.get(key, ()))
 
 
@@ -271,19 +328,23 @@ def driveway_ids_for_site(ctx: "AddressContext", nguid) -> List[Hashable]:
 class StreetMeasure:
     """Distance from the road origin along all segments of one street (StreetID, else same name)."""
 
-    def __init__(self, ctx: AddressContext, sid: str, key: str):
+    def __init__(self, ctx: AddressContext, sid: str, key: str, community: str = ""):
         self.ctx = ctx
         self.sid = sid
         self.segs: Dict[Hashable, Tuple[QgsGeometry, float, float]] = {}   # fid -> (linear geom, length_m, start_m)
         self.from_end = set()
         infos = []
         geoms = {}
+        by_id = ctx.repo.by_id() if sid and ctx.repo is not None else {}
+        allowed = related_street_ids(by_id, sid) if sid else set()
         for f in _ordered_features(ctx.rcl, street_segment_ids(ctx, sid, key)):
             if sid:
-                if N.clean(ctx.rcl_acc.get(f, "StreetID")) != sid:
+                if N.clean(ctx.rcl_acc.get(f, "StreetID")) not in allowed:
                     continue
             else:
                 if N.name_key({p: ctx.rcl_acc.get(f, p) for p in N.NAME_PARTS}) != key or not key:
+                    continue
+                if community and not _segment_community(ctx, f, community):
                     continue
             g = gu.linear_geometry(f.geometry())
             info = gu.line_info(g)
@@ -550,6 +611,17 @@ def house_numbers_by_side(ctx: AddressContext, segment_fid: Hashable, access: Qg
     return out
 
 
+def _segment_community(ctx: AddressContext, feat, community: str) -> bool:
+    """True when the road's community is empty or matches. Used only when an address has no StreetID."""
+    found = []
+    for name in ("MSAGComm_L", "MSAGComm_R", "IncMuni_L", "IncMuni_R"):
+        if ctx.rcl_acc.has(name):
+            value = N.clean(ctx.rcl_acc.get(feat, name)).upper()
+            if value:
+                found.append(value)
+    return not found or community in found
+
+
 def parity_matches(number: int, parity: str) -> bool:
     """True when ``number`` is odd for O and even for E. Both / unknown always match."""
     p = (parity or "").strip().upper()
@@ -601,11 +673,16 @@ def _street_address_locations(ctx: AddressContext, sid: str, parts, side: str, m
     """(feature, number, suffix, measure.locate result) for each address on this street and side."""
     acc = ctx.addr_acc
     key = N.name_key(parts)
+    use_sid = bool(sid and acc.has("StreetID"))
+    allowed = None
+    if use_sid:
+        by_id = ctx.repo.by_id() if ctx.repo is not None else {}
+        allowed = related_street_ids(by_id, sid)
     for f in _ordered_features(ctx.addr, street_address_ids(ctx, sid, key)):
         if f.id() == exclude:
             continue
-        if sid and acc.has("StreetID"):
-            if N.clean(acc.get(f, "StreetID")) != sid:
+        if use_sid:
+            if N.clean(acc.get(f, "StreetID")) not in allowed:
                 continue
         elif N.name_key({p: acc.get(f, p) for p in N.NAME_PARTS}) != key:
             continue
@@ -1047,7 +1124,7 @@ def address_lookup_defaults(ctx: AddressContext) -> Dict[str, str]:
 def commit_address(ctx: AddressContext, plan: AddressPlan, number: int, suffix: str = "", unit: str = "",
                    placement: Optional[str] = None, create_driveway: Optional[bool] = None, *,
                    unit_type: str = "", building: str = "", address_status: str = "",
-                   address_type: str = "") -> Dict[str, Hashable]:
+                   address_type: str = "", landmark: str = "", milepost: str = "") -> Dict[str, Hashable]:
     """Write the address point (and driveway) into the edit buffers. Returns their ids."""
     a = ctx.pcfg.addresses
     acc = ensure_full_name_mapping(ctx.addr, ctx.addr_acc)
@@ -1062,7 +1139,9 @@ def commit_address(ctx: AddressContext, plan: AddressPlan, number: int, suffix: 
     aid, access_fid = link_access(ctx, seat, plan.street_id, plan.rcl_nguid, plan.side,
                                   plan.parent_driveway)
     vals = dict(plan.parts)
-    vals.update({"Add_Number": int(number), "AddNum_Suf": suffix or None, "Unit": unit or None,
+    named = bool((landmark or "").strip() or (milepost or "").strip())
+    house = None if named and not int(number or 0) else int(number)
+    vals.update({"Add_Number": house, "AddNum_Suf": suffix or None, "Unit": unit or None,
                  "Placement": placement or None, "StreetID": plan.street_id or None,
                  "FullName": plan.full_name or None,
                  "RCL_NGUID": plan.rcl_nguid or None, "Access_X": access_addr.x(), "Access_Y": access_addr.y(),
@@ -1078,6 +1157,10 @@ def commit_address(ctx: AddressContext, plan: AddressPlan, number: int, suffix: 
         vals["AddressStatus"] = address_status
     if address_type:
         vals["AddressType"] = address_type
+    if (landmark or "").strip():
+        vals["LandmkName"] = landmark.strip()
+    if (milepost or "").strip():
+        vals["Mile_Post"] = milepost.strip()
     for key, value in plan.community.items():
         vals[COMMUNITY_FIELDS[key][0]] = value
     for field_name, value in address_fallbacks(ctx.rcl_cfg, plan.side, plan.community).items():

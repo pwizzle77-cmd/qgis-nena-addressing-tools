@@ -87,6 +87,18 @@ class QgsRectangle:
     def intersects(self, o):
         return not (o.v[0] > self.v[2] or o.v[2] < self.v[0] or o.v[1] > self.v[3] or o.v[3] < self.v[1])
 
+    def xMinimum(self):
+        return self.v[0]
+
+    def yMinimum(self):
+        return self.v[1]
+
+    def xMaximum(self):
+        return self.v[2]
+
+    def yMaximum(self):
+        return self.v[3]
+
 
 class QgsWkbTypes:
     @staticmethod
@@ -312,6 +324,12 @@ class QgsCoordinateReferenceSystem:
 
     def isGeographic(self):
         return False
+
+    def isValid(self):
+        return bool(self._a)
+
+    def __eq__(self, other):
+        return isinstance(other, QgsCoordinateReferenceSystem) and self._a == getattr(other, "_a", None)
 
     def mapUnits(self):
         return "m"
@@ -580,6 +598,14 @@ class QgsVectorLayer:
 
     def wkbType(self):
         return getattr(self, "_wkb", 2)
+
+    def geometryType(self):
+        wkb = self.wkbType()
+        if wkb in (1, 4):
+            return Qgis.GeometryType.Point
+        if wkb in (3, 6):
+            return getattr(Qgis.GeometryType, "Polygon", 2)
+        return Qgis.GeometryType.Line
 
     def isSpatial(self):
         return self.wkbType() != 100

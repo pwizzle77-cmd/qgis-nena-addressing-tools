@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
 """Address validation: empty fields, range, side/parity, order, duplicates, access point, boundary attribution."""
 
+import math
 import re
 from collections import defaultdict
 from typing import Dict, List
 
-from qgis.core import QgsFeatureRequest, QgsPointXY
+from qgis.core import QgsCoordinateReferenceSystem, QgsFeatureRequest, QgsPointXY
 
 from ..ranging import matches_parity, normalize_parity
 from ..rules import ERROR, WARNING, Issue, check_directional
@@ -13,8 +14,8 @@ from ..schema import SIDE_FIELDS
 from ..streets import names as N
 from ..streets.street_types import OFFICIAL_BY_UPPER, TYPE_ABBREVIATIONS
 from . import numbering as NB
-from .engine import (AddressContext, StreetMeasure, _pt, attribute_centerline_sides, community_from_segment,
-                     parse_number, stored_access)
+from .engine import (AddressContext, StreetMeasure, _pt, _xf, attribute_centerline_sides, community_from_segment,
+                     parse_number, resolve_street, stored_access)
 from ..schema import MANDATORY
 from .ssap import COMMUNITY_FIELDS, SSAP_FIELDS
 
@@ -24,6 +25,42 @@ _ALSO_REQUIRED = ("AddressStatus", "AddressType", "Placement")
 _NOT_CHECKED = {"Add_Number", "DateUpdate"}
 _ZIP5_RE = re.compile(r"^\d{5}$")
 _ZIP4_RE = re.compile(r"^\d{4}$")
+_LATLONG_TOL_M = 2.0
+
+
+def _named_place(acc, feature) -> str:
+    for name in ("LandmkName", "Mile_Post"):
+        if acc.has(name):
+            value = N.clean(acc.get(feature, name))
+            if value:
+                return value
+    return ""
+
+
+def _address_community(acc, feature) -> str:
+    for name in ("MSAGComm", "Inc_Muni"):
+        if acc.has(name):
+            value = N.clean(acc.get(feature, name)).upper()
+            if value:
+                return value
+    return ""
+
+
+def _float_or_none(value):
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def lonlat_metres(lon1, lat1, lon2, lat2) -> float:
+    """Metres between two WGS84 points. Enough to tell a few feet from a wrong coordinate."""
+    mid = math.radians((lat1 + lat2) / 2.0)
+    dx = math.radians(lon2 - lon1) * 6371000.0 * math.cos(mid)
+    dy = math.radians(lat2 - lat1) * 6371000.0
+    return math.hypot(dx, dy)
 
 
 def _type_issue(fid, field_name, value) -> List[Issue]:
@@ -97,6 +134,8 @@ def address_issues(ctx: AddressContext, check_attribution: bool = True, progress
         fillable = set()
     feats = list(ctx.addr.getFeatures())
     total = max(len(feats), 1)
+    by_id = ctx.repo.by_id() if ctx.repo is not None else {}
+    wgs = _xf(ctx.addr.crs(), QgsCoordinateReferenceSystem("EPSG:4326"))
     for pos, f in enumerate(feats):
         if progress is not None and pos % 200 == 0:
             progress(100.0 * pos / total)
@@ -117,19 +156,24 @@ def address_issues(ctx: AddressContext, check_attribution: bool = True, progress
                 out.extend(_type_issue(f.id(), field_name, acc.get(f, field_name)))
         out.extend(_zip_issues(f.id(), acc, f))
         num, suf = parse_number(acc.get(f, "Add_Number"), acc.get(f, "AddNum_Suf") if acc.has("AddNum_Suf") else None)
+        _latlong_issue(out, acc, f, wgs)
         sid = N.clean(acc.get(f, "StreetID")) if acc.has("StreetID") else ""
         parts = {p: acc.get(f, p) for p in N.NAME_PARTS}
+        sid, parts = resolve_street(by_id, sid, parts)
         key = N.name_key(parts)
-        street = sid or key
-        if num is None:
-            out.append(Issue(f.id(), WARNING, "ADDR_NO_NUMBER", "Address point has no address number"))
+        community = "" if sid else _address_community(acc, f)
+        street = sid or (f"{key}|{community}" if key else "")
+        named = _named_place(acc, f)
+        if num is None or (num == 0 and named):
+            if not named:
+                out.append(Issue(f.id(), WARNING, "ADDR_NO_NUMBER", "Address point has no address number"))
             continue
         if not street:
             out.append(Issue(f.id(), WARNING, "ADDR_NO_STREET", f"Address {num}{suf} has no street"))
             continue
         seen[(street, num, suf, unit)].append(f.id())
         if street not in measures:
-            measures[street] = StreetMeasure(ctx, sid, key)
+            measures[street] = StreetMeasure(ctx, sid, key, "" if sid else community)
         m = measures[street]
         if not m.segs:
             out.append(Issue(f.id(), WARNING, "ADDR_STREET_NOT_ON_MAP",
@@ -146,14 +190,12 @@ def address_issues(ctx: AddressContext, check_attribution: bool = True, progress
                              "The stored access point is no longer on its street's centerline"))
         stored_side = N.clean(acc.get(f, "Addr_Side")).upper() if acc.has("Addr_Side") else ""
         geo_side = NB.side_of(dx, dy, roof.x() - probe.x(), roof.y() - probe.y()) or ""
-        if stored_side in ("L", "R"):
-            side = stored_side
-            if geo_side and geo_side != stored_side:
-                out.append(Issue(f.id(), WARNING, "ADDR_SIDE_MISMATCH",
-                                 f"Addr_Side is '{stored_side}' but {num}{suf} sits geometrically on the "
-                                 f"{geo_side} side of segment {seg_fid}", stored_side, seg_fid))
-        else:
-            side = geo_side
+        if stored_side in ("L", "R") and geo_side and geo_side != stored_side:
+            out.append(Issue(f.id(), WARNING, "ADDR_SIDE_MISMATCH",
+                             f"Addr_Side is '{stored_side}' but {num}{suf} sits geometrically on the "
+                             f"{geo_side} side of segment {seg_fid}", stored_side, seg_fid))
+        # The building's side wins. A stored Addr_Side does not hide a number on the other side of the road.
+        side = geo_side or (stored_side if stored_side in ("L", "R") else "")
         if not side:
             continue
         _geometry, length, start = m.segs[seg_fid]
@@ -222,6 +264,22 @@ def address_issues(ctx: AddressContext, check_attribution: bool = True, progress
     if progress is not None:
         progress(100.0)
     return out
+
+
+def _latlong_issue(out, acc, feature, wgs) -> None:
+    if not acc.has("Longitude") or not acc.has("Latitude"):
+        return
+    lon, lat = _float_or_none(acc.get(feature, "Longitude")), _float_or_none(acc.get(feature, "Latitude"))
+    if lon is None or lat is None or (lon == 0.0 and lat == 0.0):
+        return
+    try:
+        point = wgs.transform(_pt(feature.geometry()))
+    except Exception:  # noqa: BLE001 - a CRS the project cannot transform is not a mismatch
+        return
+    gap = lonlat_metres(lon, lat, point.x(), point.y())
+    if gap > _LATLONG_TOL_M:
+        out.append(Issue(feature.id(), WARNING, "ADDR_LATLONG_MISMATCH",
+                         f"Stored longitude/latitude is {gap:.0f} m from the point"))
 
 
 def centerline_boundary_issues(ctx: AddressContext) -> List[Issue]:

@@ -3,8 +3,9 @@
 
 import contextlib
 
-from qgis.core import (Qgis, QgsCoordinateTransform, QgsFeature, QgsFeatureRequest, QgsFeatureSink,
-                       QgsGeometry, QgsMessageLog, QgsProject, QgsVectorDataProvider, QgsWkbTypes)
+from qgis.core import (Qgis, QgsCoordinateReferenceSystem, QgsCoordinateTransform, QgsFeature, QgsFeatureRequest,
+                       QgsFeatureSink, QgsGeometry, QgsMessageLog, QgsPointXY, QgsProject, QgsVectorDataProvider,
+                       QgsWkbTypes)
 
 from ..compat import msg_level, py_value
 from .layer_access import ConfigError
@@ -204,6 +205,46 @@ def _is_zero(value) -> bool:
         return False
 
 
+def coordinates_to_write(lon, lat, xy, to_wgs):
+    """Keep a real longitude/latitude pair. Fill an empty or zero value from the point."""
+    def missing(value):
+        return value is None or _is_zero(value)
+
+    if not missing(lon) and not missing(lat):
+        return lon, lat, False
+    x, y = to_wgs(xy)
+    return (x if missing(lon) else lon), (y if missing(lat) else lat), True
+
+
+def _as_point(geom):
+    if geom is None or geom.isEmpty():
+        return None
+    try:
+        if geom.type() != Qgis.GeometryType.Point:
+            return None
+    except Exception:  # noqa: BLE001
+        return None
+    body = geom.centroid() if geom.isMultipart() else geom
+    point = body.asPoint()
+    return point.x(), point.y()
+
+
+def _wgs84(layer, xy):
+    src = layer.crs()
+    if getattr(src, "authid", lambda: "")() == "EPSG:4326":
+        return round(xy[0], 7), round(xy[1], 7)
+    point = QgsCoordinateTransform(
+        src, QgsCoordinateReferenceSystem("EPSG:4326"), QgsProject.instance()).transform(QgsPointXY(xy[0], xy[1]))
+    return round(point.x(), 7), round(point.y(), 7)
+
+
+def _point_layer(layer) -> bool:
+    try:
+        return layer.geometryType() == Qgis.GeometryType.Point
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def import_layer(source, dest, field_map, selected_only: bool = False, progress=None) -> dict:
     """
     Copy features into ``dest`` and save them immediately.
@@ -245,7 +286,10 @@ def import_layer(source, dest, field_map, selected_only: bool = False, progress=
         req.setFilterFids(ids)
         total = len(ids)
 
-    written = skipped = null_geom = bad_values = multipart = blank = zero_coords = 0
+    written = skipped = null_geom = bad_values = multipart = blank = zero_coords = filled_coords = 0
+    fill_lonlat = spatial and _point_layer(dest)
+    lon_i = dest_fields.lookupField("Longitude") if fill_lonlat else -1
+    lat_i = dest_fields.lookupField("Latitude") if fill_lonlat else -1
     coord_fields = {i for i in range(dest_fields.count())
                     if dest_fields.at(i).name().upper() in COORDINATE_FIELDS}
     seen = 0
@@ -303,6 +347,14 @@ def import_layer(source, dest, field_map, selected_only: bool = False, progress=
             if _conform(g, dest.wkbType()):
                 multipart += 1
             nf.setGeometry(g)
+            xy = _as_point(g) if lon_i >= 0 and lat_i >= 0 else None
+            if xy is not None:
+                lon, lat, did = coordinates_to_write(
+                    py_value(nf.attribute(lon_i)), py_value(nf.attribute(lat_i)), xy, lambda p: _wgs84(dest, p))
+                if did:
+                    nf.setAttribute(lon_i, lon)
+                    nf.setAttribute(lat_i, lat)
+                    filled_coords += 1
         batch.append(nf)
         if len(batch) >= BATCH:
             flush()
@@ -319,6 +371,7 @@ def import_layer(source, dest, field_map, selected_only: bool = False, progress=
         "skipped": skipped,
         "blank": blank,
         "zero_coordinates": zero_coords,
+        "coordinates_filled": filled_coords,
         "null_geometry": null_geom,
         "bad_values": bad_values,
         "multipart": multipart,

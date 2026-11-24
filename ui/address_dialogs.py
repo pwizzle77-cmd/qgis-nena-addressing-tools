@@ -54,6 +54,12 @@ class AddressDialog(NormalDialog):
         form.addRow("Unit type", self.cb_unit_type)
         self.ed_unit = QLineEdit()
         form.addRow("Unit", self.ed_unit)
+        self.ed_landmark = QLineEdit()
+        self.ed_landmark.setPlaceholderText("optional, when there is no house number")
+        form.addRow("Landmark", self.ed_landmark)
+        self.ed_mile = QLineEdit()
+        self.ed_mile.setPlaceholderText("optional")
+        form.addRow("Milepost", self.ed_mile)
         defaults = defaults or {}
         # Status and type start on the value ticked as Default in Lookup tables.
         self.cb_status = self._pick_list(statuses, defaults.get("AddressStatus", ""))
@@ -106,6 +112,8 @@ class AddressDialog(NormalDialog):
                     placement=self.cb_place.currentData() or self.cb_place.currentText(),
                     address_status=self.cb_status.currentData() or "",
                     address_type=self.cb_type.currentData() or "",
+                    landmark=self.ed_landmark.text().strip(),
+                    milepost=self.ed_mile.text().strip(),
                     create_driveway=False)
 
 

@@ -19,6 +19,7 @@ from .config import PluginConfig
 from .layer_access import FieldAccessor, read_segments
 from .schema import MANDATORY, RANGE_FIELDS
 from .template import effective_fields
+from .network import network_issues
 from .topology import assign_nodes, build_chains, direction_conflicts
 
 
@@ -107,6 +108,11 @@ class Validator:
                                               "NENA centerlines should be single-part"))
                     if not f.geometry().isGeosValid():
                         issues.append(V.Issue(fid, V.INFO, "GEOMETRY_INVALID", "Geometry is not GEOS-valid"))
+
+        if vs.check_geometry:
+            snap = gu.metres_to_layer_units(self.cfg.ranging.snap_tolerance_m, self.layer.crs())
+            near = gu.metres_to_layer_units(max(self.cfg.ranging.snap_tolerance_m * 10.0, 5.0), self.layer.crs())
+            issues.extend(_in_scope(network_issues(self.layer, acc, segs, snap, near), scope))
 
         if vs.check_nguid and acc.has("RCL_NGUID"):
             nguid_idx = acc.index["RCL_NGUID"]

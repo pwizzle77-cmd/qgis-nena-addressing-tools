@@ -823,9 +823,10 @@ The **Results** page lists every problem. Double-click a row to zoom to it. You 
 - Parity that doesn't match the numbers on that side
 - Missing, duplicate, or badly formed IDs
 - Empty, zero-length, or broken geometry
+- An end that stops a few metres short of another road, a crossing that was never split, and two pieces of the same road that meet with nothing else there (a pseudo-node). A real cul-de-sac, well away from other roads, is not listed. Set **Overpass** to Y on a line that crosses another at a different grade so that crossing is skipped. Update schema adds the field.
 - Names that don't match the master street list
 
-**Address checks** (from the Addresses window) catch numbers outside the road's range, the wrong odd/even side, numbers out of order, duplicates, access points that have moved off the road, missing streets, and ZIP/community/ESN values that don't match the road side.
+**Address checks** (from the Addresses window) catch numbers outside the road's range, a house number on the wrong side of the road from where the building sits, a stored side that disagrees with that, numbers out of order, duplicates, access points that have moved off the road, missing streets, longitude/latitude that don't match the point, and ZIP/community/ESN values that don't match the road side. A landmark or milepost with no house number is accepted. An alias of a street is checked as the live street. Two towns with the same road name and no StreetID are not treated as one street when their community differs.
 
 ### Zones (PSAP, provisioning, law, fire, EMS, and other boundaries)
 
@@ -1018,12 +1019,15 @@ To undo a change, pick the version you want to go back to and click **Roll back 
 - **Roads should meet at their ends.** A road crossing the middle of another isn't an intersection until it's split. The plugin can split it for you.
 - **A piece drawn backwards** starts its own numbering. Validate flags it, and **Reverse** fixes it.
 - **Select pieces before merging**, so the plugin still knows their ranges.
-- **Overpasses:** turn off splitting on crossings where roads pass over each other. T-intersections are still split.
+- **Overpasses:** turn off splitting on crossings where roads pass over each other. T-intersections are still split. On a road that is already drawn, set **Overpass** to Y so Check does not list that crossing.
 - **Only edits made in this QGIS session** are re-ranged automatically, not edits from other programs.
 - **Undo is per layer.**
 - **House-number suffixes** (101A, 101-1) aren't used for ranging. Only the leading digits count.
 - **Field templates** bring field names, types, and required flags, but not domains or default values.
-- **Not in this version:** a Processing toolbox algorithm, snapping the building click to footprints, rewriting street types already on features, or a dangles/overshoots topology check.
+- **Retire** (Centerlines and Addressing menus) sets the selected roads and addresses to status RET and fills Expire. The rows stay in the layer. **Show only current features** hides expired and retired rows. Click it again to show them.
+- **Export NG9-1-1 submission** (Setup menu) writes the current centerlines, address points, and zone layers to a File Geodatabase. Plugin link fields are left out. If this QGIS cannot write a File Geodatabase, the file is a GeoPackage and the message says so.
+- **Place address** has Landmark and Milepost. Leave the number at 0 and fill one of those for a place that has no house number.
+- **Not in this version:** a Processing toolbox algorithm, snapping the building click to footprints, or rewriting street types already on features.
 
 ---
 
@@ -1047,6 +1051,7 @@ To undo a change, pick the version you want to go back to and click **Roll back 
 
 ## What's new
 
+- **3.9.6** — Check lists a near-miss road end, an unsplit crossing, and a pseudo-node. Overpass Y skips a grade-separated crossing. Retire keeps a road or address with status RET and an Expire date, and Show only current features hides those rows. Export NG9-1-1 submission writes current centerlines, addresses, and zones without the plugin's link fields. Address Check uses the side the building sits on, compares stored longitude/latitude with the point, and accepts a landmark or milepost with no house number. Address import fills longitude and latitude from the point when they are empty. Alias street names follow the live street.
 - **3.8.2** — TF addressing measures from the line's last vertex. Numbering formulas, the From-number base, parity, rounding, collision rules and physical sides stay the same. Neighbor and validation order use the same TF origin.
 - **3.8.1** — Deleting an address removes its temporary road-access circle, dashed line and label while keeping other selected addresses' drawings.
 - **3.6.17** — **One Settings window.** Every setting is on a page of **NENA ▾ → Settings**, chosen from a list on the left: Layers, Fields, Sides, Defaults, Street rules, Address rules, Ranging, Checks, and Editing. The Streets, Addresses, Ranges, and Check windows keep their buttons and lists, plus a **Settings…** button that opens their page. **Version and lookup tables** now sit in collapsed, unticked **Versions** and **Lookup tables** groups at the bottom of the NENA group instead of being hidden; projects from earlier versions are tidied when opened, and hiding them completely is still on the NENA menu. The **master street list** draws only the rows on screen, so a county's few thousand names open at once and the search is instant.

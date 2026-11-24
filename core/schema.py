@@ -154,6 +154,9 @@ RCL_FIELDS: List[FieldDef] = [
              ("STREET_ID", "STREETGUID", "ST_ID")),
     FieldDef("RoadStatus", OPTIONAL, T_STRING, 32, "Plugin: road status code (Active, Proposed, Private, …)",
              ("ROAD_STATUS", "ROADSTATUS", "RD_STATUS")),
+    FieldDef("Overpass", OPTIONAL, T_STRING, 1,
+             "Plugin: Y when this line crosses another road at a different grade. Check then skips that crossing",
+             ("OVERPASS", "GRADESEP", "GRADE_SEP")),
 ]
 
 FIELDS_BY_NAME = {f.name: f for f in RCL_FIELDS}

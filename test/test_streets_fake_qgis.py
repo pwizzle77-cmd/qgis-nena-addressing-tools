@@ -145,6 +145,30 @@ def test_import_treats_zero_coordinates_as_not_recorded():
     assert values[0] == -82.6 and values[1] is None
 
 
+def test_import_fills_empty_coordinates_from_the_point():
+    from qgis.core import QgsGeometry, QgsPointXY
+    from nena_addressing_and_rcl_tools.core.importer import coordinates_to_write, import_layer
+    assert coordinates_to_write(None, None, (1, 2), lambda _xy: (-82.1, 29.6))[:2] == (-82.1, 29.6)
+    assert coordinates_to_write(-82.6, 30.2, (1, 2), lambda _xy: (0, 0))[:2] == (-82.6, 30.2)
+    src = QgsVectorLayer("Point", "src")
+    dest = QgsVectorLayer("Point", "addresses")
+    src._wkb = dest._wkb = 1
+    for lyr in (src, dest):
+        lyr.addAttribute(QgsField("Longitude", "double"))
+        lyr.addAttribute(QgsField("Latitude", "double"))
+    kept = src.add_committed([-82.6, 30.2], None)
+    blank = src.add_committed([None, None], None)
+    zero = src.add_committed([0.0, 0.0], None)
+    src._feats[kept].setGeometry(QgsGeometry.fromPointXY(QgsPointXY(1, 2)))
+    src._feats[blank].setGeometry(QgsGeometry.fromPointXY(QgsPointXY(500000, 3000000)))
+    src._feats[zero].setGeometry(QgsGeometry.fromPointXY(QgsPointXY(400000, 3200000)))
+    result = import_layer(src, dest, {"Longitude": "Longitude", "Latitude": "Latitude"})
+    assert result["coordinates_filled"] == 2 and result["zero_coordinates"] == 1
+    lon = dest.fields().lookupField("Longitude")
+    values = [getattr(v, "v", v) for v in (f.attribute(lon) for f in dest.getFeatures())]
+    assert values[0] == -82.6 and values[1] == 500000 and values[2] == 400000
+
+
 def test_rename_cascades_and_keeps_alias():
     rcl, addr, master, svc = setup()
     svc.build_from_centerlines()

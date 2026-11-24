@@ -15,7 +15,8 @@ Address points:
 
 * **FullName** – the name parts in order.
 * **FullAddr** – "123A North Main Street Apt 4": number prefix, number and
-  suffix, full road name, unit type and unit.
+  suffix, full road name, unit type and unit. With no number, a landmark or
+  milepost leads the text.
 
 The master street name cascade (rename, sync, assign) writes FullName on
 roads and addresses and FullAddr on addresses straight away; the save
@@ -86,6 +87,10 @@ def full_address(values: dict, full_name: Optional[str] = None) -> str:
     unit_text = ""
     if unit:
         unit_text = f"{unit_type} {unit}" if unit_type and not unit.upper().startswith(unit_type.upper()) else unit
+    if not number:
+        landmark = clean(_get(values, "LandmkName"))
+        mile = clean(_get(values, "Mile_Post"))
+        number = landmark or (f"Milepost {mile}" if mile else "")
     return " ".join(part for part in (number, name, unit_text) if part)
 
 

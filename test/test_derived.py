@@ -41,6 +41,9 @@ def test_full_address():
     assert D.full_address(dict(base, AddNum_Pre="N", Add_Number=1234.0)) == "N1234 North Main Street"
     assert D.full_address(dict(base, Unit="Apt 4", UnitType="Apt")) == "123 North Main Street Apt 4"
     assert D.full_address(base, "Elm Road") == "123 Elm Road"
+    bare = {"St_Name": "Main", "St_PosTyp": "Street", "LandmkName": "City Hall"}
+    assert D.full_address(bare) == "City Hall Main Street"
+    assert D.full_address({"Mile_Post": "12.4", "St_Name": "Main", "St_PosTyp": "Street"}) == "Milepost 12.4 Main Street"
 
 
 def test_travel_time_and_hierarchy():

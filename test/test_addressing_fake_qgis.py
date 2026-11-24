@@ -352,6 +352,54 @@ def test_side_mismatch_is_flagged(world):
     assert ("ADDR_SIDE_MISMATCH", fid) in {(i.code, i.fid) for i in address_issues(ctx)}
 
 
+def test_number_on_the_other_side_of_the_road_is_an_error(world):
+    # The building is on the even side. Addr_Side says left, which would match an odd number.
+    ctx, addr = world["ctx"], world["addr"]
+    fid = E.commit_address(ctx, E.plan_address(ctx, P(20, 0), P(20, -20)), 100, create_driveway=False)["address"]
+    addr.changeAttributeValues(fid, {addr.fields().lookupField("Add_Number"): 121,
+                                     addr.fields().lookupField("Addr_Side"): "L"})
+    codes = {(i.code, i.fid) for i in address_issues(ctx)}
+    assert ("ADDR_WRONG_SIDE", fid) in codes
+    assert ("ADDR_SIDE_MISMATCH", fid) in codes
+
+
+def test_landmark_without_a_number_is_accepted(world):
+    addr, pcfg, rcl, cfg = world["addr"], world["pcfg"], world["rcl"], world["cfg"]
+    addr.addAttribute(QgsField("LandmkName", "string"))
+    ctx = E.AddressContext(pcfg, rcl, cfg)
+    fid = _addr_point(addr, [None] * len(ADDR), 20, 20)
+    addr.changeAttributeValues(fid, {addr.fields().lookupField("LandmkName"): "City Hall"})
+    assert ("ADDR_NO_NUMBER", fid) not in {(i.code, i.fid) for i in address_issues(ctx)}
+
+
+def test_stored_longitude_must_match_the_point(world):
+    ctx, addr = world["ctx"], world["addr"]
+    fid = E.commit_address(ctx, E.plan_address(ctx, P(20, 0), P(20, 20)), 121, create_driveway=False)["address"]
+    assert ("ADDR_LATLONG_MISMATCH", fid) not in {(i.code, i.fid) for i in address_issues(ctx)}
+    addr.changeAttributeValues(fid, {addr.fields().lookupField("Longitude"): 10.0})
+    assert ("ADDR_LATLONG_MISMATCH", fid) in {(i.code, i.fid) for i in address_issues(ctx)}
+    addr.changeAttributeValues(fid, {addr.fields().lookupField("Longitude"): 0.0,
+                                     addr.fields().lookupField("Latitude"): 0.0})
+    assert ("ADDR_LATLONG_MISMATCH", fid) not in {(i.code, i.fid) for i in address_issues(ctx)}
+
+
+def test_alias_and_community_share_one_street_key(world):
+    ctx, addr, master = world["ctx"], world["addr"], world["master"]
+    vals = {"StreetID": "S9", "St_Name": "Old", "St_PosTyp": "St", "AliasOf": "S1",
+            "Status": "Retired", "FullName": "Old St"}
+    master.add_committed([vals.get(name) for name, _k, _l in MASTER_SCHEMA], None)
+    primary = E.commit_address(ctx, E.plan_address(ctx, P(20, 0), P(20, 20)), 121, create_driveway=False)["address"]
+    alias = _addr_point(addr, [121, None, "Old", "St", "S9"] + [None] * (len(ADDR) - 5), 40, 20)
+    codes = {(i.code, i.fid) for i in address_issues(ctx)}
+    assert ("ADDR_DUPLICATE", primary) in codes and ("ADDR_DUPLICATE", alias) in codes
+    town_a = _addr_point(addr, [10, None, "Elm", "St", None, None, None, None, None, None, None, "TOWN A"]
+                         + [None] * (len(ADDR) - 12), 20, 20)
+    town_b = _addr_point(addr, [10, None, "Elm", "St", None, None, None, None, None, None, None, "TOWN B"]
+                         + [None] * (len(ADDR) - 12), 25, 20)
+    codes = {(i.code, i.fid) for i in address_issues(ctx)}
+    assert ("ADDR_DUPLICATE", town_a) not in codes and ("ADDR_DUPLICATE", town_b) not in codes
+
+
 def test_address_issues_reports_progress(world):
     ctx, addr = world["ctx"], world["addr"]
     E.commit_address(ctx, E.plan_address(ctx, P(20, 0), P(20, 20)), 121, create_driveway=False)

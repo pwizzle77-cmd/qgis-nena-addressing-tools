@@ -251,11 +251,17 @@ class AddressTool(_AccessTool):
                 ids = E.commit_address(self.ctx, plan, v["number"], v["suffix"], v["unit"], v["placement"],
                                        False, unit_type=v.get("unit_type") or "",
                                        address_status=v.get("address_status") or "",
-                                       address_type=v.get("address_type") or "")
+                                       address_type=v.get("address_type") or "",
+                                       landmark=v.get("landmark") or "", milepost=v.get("milepost") or "")
             except ConfigError as exc:
                 self.notify("Warning", str(exc))
             else:
-                self.notify("Success", f"Address {v['number']}{v['suffix']} {plan.full_name} created."
+                what = v.get("landmark") or ""
+                if not what and v.get("milepost") and not v["number"]:
+                    what = f"milepost {v['milepost']}"
+                if not what:
+                    what = f"{v['number']}{v['suffix']}"
+                self.notify("Success", f"Address {what} {plan.full_name} created."
                             + self._access_note(ids))
                 self._nguid_note(ids)
                 self.ctx.addr.triggerRepaint()

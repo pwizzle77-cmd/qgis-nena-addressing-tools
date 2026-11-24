@@ -23,7 +23,7 @@ from .schema import MANDATORY, FieldDef, auto_map
 PLUGIN_RCL = {"RCL_NGUID", "StreetID", "FromAddr_L", "ToAddr_L", "FromAddr_R", "ToAddr_R", "Parity_L",
               "Parity_R", "OneWay", "DateUpdate", "WhoEntered", "LastUpdatedBy", "FullName", "LSt_PreDir",
               "LSt_Name", "LSt_Typ", "LSt_PosDir", "LSt_FullName", "PSAP_L", "PSAP_R", "Hierarchy", "TravelTime",
-              "Surface", "SpeedLimit", "RoadClass"}
+              "Surface", "SpeedLimit", "RoadClass", "Overpass"}
 PLUGIN_ADDRESS = {"Site_NGUID", "Add_Number", "StreetID", "RCL_NGUID", "Access_X", "Access_Y", "Addr_Side",
                   "FullName", "AccessPointID", "UnitType", "AddressStatus", "AddressType", "DateUpdate",
                   "WhoEntered", "LastUpdatedBy", "FullAddr"}
