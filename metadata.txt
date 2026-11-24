@@ -77,7 +77,7 @@ repository=https://github.com/pwizzle77-cmd/qgis-nena-addressing-tools
 tracker=https://github.com/pwizzle77-cmd/qgis-nena-addressing-tools/issues
 category=Vector
 icon=icons/icon.svg
-experimental=True
+experimental=False
 deprecated=False
 hasProcessingProvider=no
 
